@@ -1,0 +1,168 @@
+#+TITLE: BUILD_README
+#+FILETAGS: :documentation
+
+* Cross-Platform Build Script
+
+** Quick Start
+
+Build binaries for all platforms:
+
+#+BEGIN_SRC bash
+./build-all.sh
+#+END_SRC
+
+Or using justfile:
+
+#+BEGIN_SRC bash
+just build-all
+#+END_SRC
+
+** Output
+
+All binaries will be created in the =dist/= directory:
+
+#+BEGIN_SRC
+dist/
+├── greg-linux-amd64               # Linux 64-bit (19M)
+├── greg-linux-arm64               # Linux ARM 64-bit (18M)
+├── greg-linux-386                 # Linux 32-bit (18M)
+├── greg-macos-amd64               # macOS Intel (19M)
+├── greg-macos-arm64               # macOS Apple Silicon (18M)
+├── greg-windows-amd64.exe         # Windows 64-bit (19M)
+├── greg-windows-386.exe           # Windows 32-bit (18M)
+├── greg-linux-amd64.tar.gz        # Compressed (7.3M)
+├── greg-linux-arm64.tar.gz        # Compressed (6.6M)
+├── greg-linux-386.tar.gz          # Compressed (6.9M)
+├── greg-macos-amd64.tar.gz        # Compressed (7.4M)
+├── greg-macos-arm64.tar.gz        # Compressed (6.9M)
+├── greg-windows-amd64.exe.tar.gz  # Compressed (7.5M)
+├── greg-windows-386.exe.tar.gz    # Compressed (7.1M)
+├── checksums.txt                  # SHA256 checksums
+#+END_SRC
+
+** Supported Platforms
+
+✅ /Linux/
+- AMD64 (x86_64)
+- ARM64 (aarch64)
+- 386 (x86 32-bit)
+
+✅ /macOS/
+- AMD64 (Intel)
+- ARM64 (Apple Silicon)
+
+✅ /Windows/
+- AMD64 (x86_64)
+- 386 (x86 32-bit)
+
+** Features
+
+- ✅ Cross-platform compilation from macOS/Linux
+- ✅ CGO disabled for static binaries
+- ✅ Version/commit/date embedded in binaries
+- ✅ Optimized with =-ldflags="-s -w"= (stripped symbols)
+- ✅ /Automatic tar.gz compression/ (reduces 18MB → 7MB!)
+- ✅ /All archives under 10MB/ - Great for distribution!
+- ✅ SHA256 checksums generated automatically
+- ✅ Colored output with build status
+- ✅ File sizes displayed for each binary
+
+** Script Details
+
+The =build-all.sh= script:
+
+1. Cleans the =dist/= directory
+2. Builds for each platform/architecture combination
+3. Shows success/failure status with file sizes
+4. Generates SHA256 checksums
+5. Displays summary of all built binaries
+
+** Advanced Options
+
+*** Skip compression
+
+#+BEGIN_SRC bash
+COMPRESS=no ./build-all.sh
+#+END_SRC
+
+*** Use UPX compression (requires UPX installed)
+
+UPX can compress binaries even further (18MB → 5-7MB), but may trigger antivirus:
+
+#+BEGIN_SRC bash
+# Install UPX first
+brew install upx  # macOS
+sudo apt install upx  # Linux
+
+# Build with UPX
+UPX_COMPRESS=yes ./build-all.sh
+#+END_SRC
+
+*** Build only specific platforms
+
+Edit =PLATFORMS= array in =build-all.sh= or use manual build commands.
+
+#+BEGIN_SRC bash
+# Linux AMD64
+GOOS=linux GOARCH=amd64 go build -ldflags="-s -w" -o dist/greg-linux-amd64 ./cmd/greg
+
+# macOS ARM64 (Apple Silicon)
+GOOS=darwin GOARCH=arm64 go build -ldflags="-s -w" -o dist/greg-macos-arm64 ./cmd/greg
+
+# Windows AMD64
+GOOS=windows GOARCH=amd64 go build -ldflags="-s -w" -o dist/greg-windows-amd64.exe ./cmd/greg
+#+END_SRC
+
+** Distribution
+
+The =dist/= directory contains all binaries ready to share:
+
+*** For GitHub Releases
+
+Upload both:
+1. Compressed =.tar.gz= files (for easy download)
+2. Raw binaries (for direct execution)
+3. =checksums.txt= (for verification)
+
+*** For File Sharing
+
+Share the =.tar.gz= files - they're all under 10MB!
+
+#+BEGIN_SRC bash
+# All these are ready for distribution:
+greg-linux-amd64.tar.gz        (7.3M)
+greg-macos-arm64.tar.gz        (6.9M)
+greg-windows-amd64.exe.tar.gz  (7.5M)
+#+END_SRC
+
+*** Users extract with:
+
+/Linux/macOS:/
+#+BEGIN_SRC bash
+tar -xzf greg-*.tar.gz
+chmod +x greg-*
+./greg-linux-amd64
+#+END_SRC
+
+
+/Windows:/
+#+BEGIN_SRC powershell
+tar -xzf greg-windows-amd64.exe.tar.gz
+.\greg-windows-amd64.exe
+#+END_SRC
+
+** Verify Checksums
+
+Users can verify downloaded binaries:
+
+#+BEGIN_SRC bash
+# On macOS/Linux with shasum
+shasum -a 256 -c checksums.txt
+
+# On Linux with sha256sum
+sha256sum -c checksums.txt
+
+# Or check individual file
+shasum -a 256 greg-macos-arm64
+#+END_SRC
+

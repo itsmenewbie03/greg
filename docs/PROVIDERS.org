@@ -1,0 +1,703 @@
+#+TITLE: PROVIDERS
+#+FILETAGS: :documentation
+
+* Provider Development Guide
+
+This guide explains how to implement new streaming providers for greg.
+
+** Overview
+
+Providers are the heart of greg's streaming and downloading functionality. They handle searching for media, fetching episode lists, and obtaining stream URLs.
+
+Each provider is a self-contained module that implements the =Provider= interface.
+
+** Provider Interface
+
+All providers must implement this interface (defined in =internal/providers/provider.go=):
+
+#+BEGIN_SRC go
+type Provider interface {
+    // Metadata
+    Name() string
+    Type() MediaType  // Anime, Movie, TV, or All
+
+    // Search and discovery
+    Search(ctx context.Context, query string) ([]Media, error)
+    GetTrending(ctx context.Context) ([]Media, error)
+    GetRecent(ctx context.Context) ([]Media, error)
+
+    // Media details
+    GetMediaDetails(ctx context.Context, id string) (*MediaDetails, error)
+    GetSeasons(ctx context.Context, mediaID string) ([]Season, error)
+    GetEpisodes(ctx context.Context, seasonID string) ([]Episode, error)
+
+    // Stream URLs
+    GetStreamURL(ctx context.Context, episodeID string, quality Quality) (*StreamURL, error)
+    GetAvailableQualities(ctx context.Context, episodeID string) ([]Quality, error)
+
+    // Health check
+    HealthCheck(ctx context.Context) error
+}
+#+END_SRC
+:Emacs: [[file:/home/choky/dev/greg/internal/providers/provider.go::9][provider.go:9]]
+
+The =MediaType= type is also defined in the same file:
+
+#+BEGIN_SRC go
+type MediaType string
+
+const (
+    MediaTypeAnime        MediaType = "anime"
+    MediaTypeMovie        MediaType = "movie"
+    MediaTypeTV           MediaType = "tv"
+    MediaTypeMovieTV      MediaType = "movie_tv"       // Supports both movies and TV
+    MediaTypeAnimeMovieTV MediaType = "anime_movie_tv" // Supports anime, movies, and TV
+    MediaTypeManga        MediaType = "manga"          // Supports manga
+    MediaTypeAll          MediaType = "all"            // Supports all types
+)
+#+END_SRC
+:Emacs: [[file:/home/choky/dev/greg/internal/providers/provider.go::33][provider.go:33]]
+
+** Core Types
+
+*** Media
+
+Represents a single media item (anime, movie, or TV show):
+
+#+BEGIN_SRC go
+type Media struct {
+    ID          string    // Provider-specific ID
+    Title       string
+    Type        MediaType // Anime, Movie, TV
+    Year        int
+    Synopsis    string
+    PosterURL   string
+    Rating      float64
+    Genres      []string
+    TotalEpisodes int    // For anime/TV
+    Status      string   // "Ongoing", "Completed", etc.
+}
+#+END_SRC
+:Emacs: [[file:/home/choky/dev/greg/internal/providers/provider.go::52][provider.go:52]]
+
+*** MediaDetails
+
+Extended information about a media item:
+
+#+BEGIN_SRC go
+type MediaDetails struct {
+    Media
+    Seasons     []Season
+    Cast        []string
+    Studio      string      // For anime
+    Director    string      // For movies
+    AniListID   int         // Optional: for anime
+    IMDBID      string      // Optional: for movies/TV
+}
+#+END_SRC
+:Emacs: [[file:/home/choky/dev/greg/internal/providers/provider.go::66][provider.go:66]]
+
+*** Season
+
+Represents a single season of a TV show:
+
+#+BEGIN_SRC go
+type Season struct {
+    ID     string // Provider-specific season ID
+    Number int
+    Title  string
+}
+#+END_SRC
+:Emacs: [[file:/home/choky/dev/greg/internal/providers/provider.go::77][provider.go:77]]
+
+*** Episode
+
+Represents a single episode or movie:
+
+#+BEGIN_SRC go
+type Episode struct {
+    ID          string   // Provider-specific episode ID
+    Number      int
+    Season      int      // 0 for anime, 1+ for TV shows
+    Title       string
+    Synopsis    string
+    ThumbnailURL string
+    Duration    time.Duration
+    ReleaseDate time.Time
+}
+#+END_SRC
+:Emacs: [[file:/home/choky/dev/greg/internal/providers/provider.go::84][provider.go:84]]
+
+*** StreamURL
+
+Contains streaming information:
+
+#+BEGIN_SRC go
+type StreamURL struct {
+    URL         string
+    Quality     Quality
+    Type        StreamType  // HLS, DASH, MP4, etc.
+    Headers     map[string]string
+    Subtitles   []Subtitle
+    Referer     string
+}
+
+type Subtitle struct {
+    Language string
+    URL      string
+    Format   string  // srt, vtt, ass
+}
+#+END_SRC
+:Emacs: [[file:/home/choky/dev/greg/internal/providers/provider.go::96][provider.go:96]]
+:Emacs: [[file:/home/choky/dev/greg/internal/providers/provider.go::106][provider.go:106]]
+
+*** StreamType
+
+The type of stream:
+
+#+BEGIN_SRC go
+type StreamType string
+
+const (
+    StreamTypeHLS  StreamType = "hls"  // HTTP Live Streaming (.m3u8)
+    StreamTypeDASH StreamType = "dash" // MPEG-DASH (.mpd)
+    StreamTypeMP4  StreamType = "mp4"  // Direct MP4
+    StreamTypeMKV  StreamType = "mkv"  // Direct MKV
+)
+#+END_SRC
+:Emacs: [[file:/home/choky/dev/greg/internal/providers/provider.go::126][provider.go:126]]
+
+*** Quality
+
+Predefined quality levels:
+
+#+BEGIN_SRC go
+type Quality string
+
+const (
+    Quality360p  Quality = "360p"
+    Quality480p  Quality = "480p"
+    Quality720p  Quality = "720p"
+    Quality1080p Quality = "1080p"
+    Quality1440p Quality = "1440p"
+    Quality4K    Quality = "2160p"
+    QualityAuto  Quality = "auto"
+)
+#+END_SRC
+:Emacs: [[file:/home/choky/dev/greg/internal/providers/provider.go::113][provider.go:113]]
+
+** Current Providers
+
+1. /HiAnime/ (=hianime=) - Anime provider
+   - Location: =internal/providers/hianime/=
+   - Type: =MediaTypeAnime=
+   - Features: HD quality, sub/dub variants, multiple quality options
+   - Auto-registers via =init()= in =hianime/init.go=
+
+2. /AllAnime/ (=allanime=) - Anime provider
+   - Location: =internal/providers/allanime/=
+   - Type: =MediaTypeAnime=
+   - Features: Fast search, multiple sources per episode
+   - Auto-registers via =init()= in =allanime/init.go=
+
+3. /SFlix/ (=sflix=) - Movies and TV provider
+   - Location: =internal/providers/sflix/=
+   - Type: =MediaTypeMovieTV=
+   - Features: Large library, fast responses, direct movie playback
+   - Auto-registers via =init()= in =sflix/init.go=
+
+4. /FlixHQ/ (=flixhq=) - Movies and TV provider
+   - Location: =internal/providers/flixhq/=
+   - Type: =MediaTypeMovieTV=
+   - Features: Multiple servers, good for TV series
+   - Auto-registers via =init()= in =flixhq/init.go=
+
+5. /HDRezka/ (=hdrezka=) - Multi-type provider
+   - Location: =internal/providers/hdrezka/=
+   - Type: =MediaTypeAnimeMovieTV= (supports anime, movies, and TV)
+   - Features: Supports all three media types
+   - Auto-registers via =init()= in =hdrezka/init.go=
+
+6. /Comix/ (=comix=) - Manga provider
+   - Location: =internal/providers/mangaprovider/=
+   - Type: =MediaTypeManga=
+   - Auto-registers via =init()= in =mangaprovider/comix_init.go=
+
+** Implementation Examples
+
+*** Provider Architecture
+
+Greg providers support two scraping approaches:
+
+1. *Embedded Scrapers* (Local Mode - Default): Direct HTML scraping using =goquery= inside greg
+2. *External API Delegation* (Remote Mode - Optional): Delegates to external API server via =api.Client=
+
+*** Example: SFlix
+
+#+BEGIN_SRC go
+package sflix
+
+import (
+    "context"
+    "fmt"
+    "log/slog"
+
+    "github.com/justchokingaround/greg/internal/config"
+    "github.com/justchokingaround/greg/internal/providers"
+    "github.com/justchokingaround/greg/internal/providers/api"
+    localsflix "github.com/justchokingaround/greg/internal/providers/movies/sflix"
+)
+
+// SFlixProvider has BOTH implementations
+type SFlixProvider struct {
+    config        *config.Config
+    logger        *slog.Logger
+    apiClient     *api.Client           // For remote mode
+    localProvider *localsflix.SFlix     // For local mode (embedded scraper)
+    cache         *api.InfoCache
+}
+
+func NewSFlixProvider(cfg *config.Config, logger *slog.Logger) *SFlixProvider {
+    p := &SFlixProvider{
+        config:        cfg,
+        logger:        logger,
+        localProvider: localsflix.New(),  // Internal scraper initialized
+        cache:         api.NewInfoCache(),
+    }
+    if cfg != nil && logger != nil {
+        p.apiClient = api.NewClient(cfg, logger)  // API client initialized
+    }
+    return p
+}
+
+func (p *SFlixProvider) Name() string {
+    return "sflix"
+}
+
+func (p *SFlixProvider) Type() providers.MediaType {
+    return providers.MediaTypeMovieTV
+}
+
+// Search uses isLocal() to decide which implementation to call
+func (p *SFlixProvider) Search(ctx context.Context, query string) ([]providers.Media, error) {
+    if p.isLocal() {
+        // Uses embedded goquery scraper - NO external dependencies
+        return p.searchLocal(ctx, query)
+    }
+
+    // Delegates to external API server
+    resp, err := p.apiClient.Search(ctx, "movies", "sflix", query)
+    if err != nil {
+        return nil, fmt.Errorf("search failed: %w", err)
+    }
+
+    results := make([]providers.Media, 0, len(resp.Results))
+    for _, result := range resp.Results {
+        results = append(results, providers.APIResultToMedia(result, providers.MediaTypeMovieTV))
+    }
+    return results, nil
+}
+
+// isLocal checks configuration to decide which implementation to use
+func (p *SFlixProvider) isLocal() bool {
+    if p.config == nil || p.config.Providers.SFlix.Mode == "local" || p.config.Providers.SFlix.Mode == "" {
+        return true  // Default to local (embedded scraper)
+    }
+    return false  // Use remote API
+}
+
+// Local implementation using goquery
+func (p *SFlixProvider) searchLocal(ctx context.Context, query string) ([]providers.Media, error) {
+    results, err := p.localProvider.Search(query)  // Direct HTML scraping
+    if err != nil {
+        return nil, err
+    }
+
+    var mediaList []providers.Media
+    for _, r := range results.Results {
+        mediaList = append(mediaList, providers.Media{
+            ID:        r.ID,
+            Title:     r.Title,
+            PosterURL: r.Image,
+            Type:      providers.MediaTypeMovie,
+        })
+    }
+    return mediaList, nil
+}
+#+END_SRC
+:Emacs: [[file:/home/choky/dev/greg/internal/providers/sflix/sflix.go][sflix.go]]
+
+ *Key Points:*
+- Internal scraper at =/internal/providers/movies/sflix/sflix.go= uses =goquery= for HTML parsing
+- Wrapper provider at =/internal/providers/sflix/sflix.go= contains both implementations
+- =isLocal()= method checks =config.Providers.SFlix.Mode= to decide
+- Local mode requires NO external dependencies - scraping happens entirely in greg
+- Remote mode delegates to external API server via =api.Client=
+
+** Best Practices
+
+*** 1. Use the Shared API Client
+
+All providers should use the shared =api.Client= instead of implementing their own HTTP logic:
+
+#+BEGIN_SRC go
+type MyProvider struct {
+    config    *config.Config
+    logger    *slog.Logger
+    apiClient *api.Client  // Use shared client
+    cache     *infoCache   // Cache responses per provider instance
+}
+
+func NewMyProvider(cfg *config.Config, logger *slog.Logger) *MyProvider {
+    p := &MyProvider{
+        config: cfg,
+        logger: logger,
+        cache:  newInfoCache(),
+    }
+    if cfg != nil && logger != nil {
+        p.apiClient = api.NewClient(cfg, logger)
+    }
+    return p
+}
+
+// SetConfig allows runtime reconfiguration
+func (p *MyProvider) SetConfig(cfg *config.Config, logger *slog.Logger) {
+    p.config = cfg
+    p.logger = logger
+    if cfg != nil && logger != nil {
+        p.apiClient = api.NewClient(cfg, logger)
+    }
+}
+#+END_SRC
+
+*** 2. Cache Media Info Responses
+
+Cache API responses to avoid redundant calls when navigating seasons/episodes:
+
+#+BEGIN_SRC go
+// infoCache caches media info responses
+type infoCache struct {
+    mu   sync.RWMutex
+    data map[string]*api.InfoResponse
+}
+
+func newInfoCache() *infoCache {
+    return &infoCache{
+        data: make(map[string]*api.InfoResponse),
+    }
+}
+
+func (c *infoCache) Get(key string) (*api.InfoResponse, bool) {
+    c.mu.RLock()
+    defer c.mu.RUnlock()
+    val, ok := c.data[key]
+    return val, ok
+}
+
+func (c *infoCache) Set(key string, val *api.InfoResponse) {
+    c.mu.Lock()
+    defer c.mu.Unlock()
+    c.data[key] = val
+}
+
+func (p *MyProvider) GetMediaDetails(ctx context.Context, id string) (*providers.MediaDetails, error) {
+    // Check cache first
+    if cached, ok := p.cache.Get(id); ok {
+        return providers.APIInfoToMediaDetails(*cached, providers.MediaTypeAnime), nil
+    }
+
+    // Call API
+    response, err := p.apiClient.GetInfo(ctx, "anime", "myprovider", id)
+    if err != nil {
+        return nil, err
+    }
+
+    // Cache for later use
+    p.cache.Set(id, response)
+
+    return providers.APIInfoToMediaDetails(*response, providers.MediaTypeAnime), nil
+}
+#+END_SRC
+:Emacs: [[file:/home/choky/dev/greg/internal/providers/hianime/hianime.go::26][hianime.go:26]]
+
+*** 3. Handle API Errors Gracefully
+
+Provide context with errors and check HTTP status codes:
+
+#+BEGIN_SRC go
+func (p *MyProvider) Search(ctx context.Context, query string) ([]providers.Media, error) {
+    response, err := p.apiClient.Search(ctx, "movies", "myprovider", query)
+    if err != nil {
+        // API client already handles HTTP errors
+        return nil, fmt.Errorf("myprovider search failed: %w", err)
+    }
+
+    return response.ToMediaList(providers.MediaTypeMovie), nil
+}
+#+END_SRC
+
+*** 4. Implement Health Checks
+
+Health checks return =error= (not =bool=):
+
+#+BEGIN_SRC go
+func (p *MyProvider) HealthCheck(ctx context.Context) error {
+    return p.apiClient.HealthCheck(ctx, "myprovider", "anime")
+}
+#+END_SRC
+
+*** 5. Quality Selection with Fallback
+
+Select the best available quality when requested quality is unavailable:
+
+#+BEGIN_SRC go
+func (p *MyProvider) GetStreamURL(ctx context.Context, episodeID string, quality providers.Quality) (*providers.StreamURL, error) {
+    resp, err := p.apiClient.GetSources(ctx, "anime", "myprovider", episodeID)
+    if err != nil {
+        return nil, err
+    }
+
+    if len(resp.Sources) == 0 {
+        return nil, fmt.Errorf("no sources available")
+    }
+
+    // Find source matching requested quality
+    var selectedSource *api.Source
+    for i := range resp.Sources {
+        src := &resp.Sources[i]
+        srcQuality := parseQuality(src.Quality)
+
+        if srcQuality == quality {
+            selectedSource = src
+            break
+        }
+
+        // Keep first source as fallback
+        if selectedSource == nil {
+            selectedSource = src
+        }
+    }
+
+    if selectedSource == nil {
+        selectedSource = &resp.Sources[0]
+    }
+
+    // Extract headers
+    referer := ""
+    origin := ""
+    if resp.Headers != nil {
+        referer = resp.Headers.Referer
+        origin = resp.Headers.Origin
+    }
+
+    streamURL := providers.APISourceToStreamURL(*selectedSource, referer, origin)
+    streamURL.Subtitles = providers.APISubtitlesToSubtitles(resp.Subtitles)
+
+    return streamURL, nil
+}
+#+END_SRC
+:Emacs: [[file:/home/choky/dev/greg/internal/providers/hianime/hianime.go::280][hianime.go:280]]
+
+** Testing Providers
+*** Unit Tests
+
+Test provider methods with mock API responses:
+
+#+BEGIN_SRC go
+func TestSFlixSearch(t *testing.T) {
+    // Create mock API server
+    server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+        // Verify correct endpoint
+        assert.Equal(t, "/api/movies/sflix/search", r.URL.Path)
+        assert.Equal(t, "inception", r.URL.Query().Get("query"))
+
+        // Return mock response
+        w.WriteHeader(http.StatusOK)
+        json.NewEncoder(w).Encode(map[string]interface{}{
+            "results": []map[string]interface{}{
+                {
+                    "id":    "movie/inception-1001",
+                    "title": "Inception",
+                    "image": "https://example.com/poster.jpg",
+                },
+            },
+        })
+    }))
+    defer server.Close()
+
+    // Create provider with mock server URL
+    provider := NewSFlixProvider(server.URL, 30*time.Second)
+
+    // Test search
+    results, err := provider.Search(context.Background(), "inception")
+    assert.NoError(t, err)
+    assert.NotEmpty(t, results)
+    assert.Equal(t, "Inception", results[0].Title)
+}
+#+END_SRC
+
+*** Integration Tests
+
+Test against real API server (requires API server running):
+
+#+BEGIN_SRC go
+//go:build integration
+// +build integration
+
+func TestSFlixSearchIntegration(t *testing.T) {
+    // Requires API server running at localhost:8080
+    provider := NewSFlixProvider("http://localhost:8080", 30*time.Second)
+
+    results, err := provider.Search(context.Background(), "Inception")
+    assert.NoError(t, err)
+    assert.NotEmpty(t, results)
+
+    // Verify first result
+    assert.Contains(t, results[0].Title, "Inception")
+    assert.NotEmpty(t, results[0].ID)
+}
+#+END_SRC
+
+
+Run integration tests with:
+#+BEGIN_SRC bash
+# Start API server first
+# Then run integration tests
+go test -tags=integration ./internal/providers/...
+#+END_SRC
+
+** Registering Providers
+
+Providers automatically register themselves via =init()= functions. No manual registration needed:
+
+#+BEGIN_SRC go
+// In your provider package (e.g., internal/providers/myprovider/init.go)
+package myprovider
+
+import (
+    "github.com/justchokingaround/greg/internal/providers"
+)
+
+func init() {
+    // Provider is auto-registered when package is imported
+    provider := NewMyProvider(nil, nil)
+    if err := providers.Register(provider); err != nil {
+        // Registration error - provider won't be available
+        return
+    }
+}
+#+END_SRC
+
+To make your provider available, simply import the package:
+
+#+BEGIN_SRC go
+// In cmd/greg/main.go or wherever providers are loaded
+import (
+    _ "github.com/justchokingaround/greg/internal/providers/hianime"
+    _ "github.com/justchokingaround/greg/internal/providers/allanime"
+    _ "github.com/justchokingaround/greg/internal/providers/sflix"
+    _ "github.com/justchokingaround/greg/internal/providers/flixhq"
+    _ "github.com/justchokingaround/greg/internal/providers/hdrezka"
+    _ "github.com/justchokingaround/greg/internal/providers/mangaprovider" // comix
+    _ "github.com/justchokingaround/greg/internal/providers/myprovider"     // Your new provider
+)
+#+END_SRC
+
+The registry manages:
+- Provider lookup by name: =providers.Get("hianime")=
+- Provider lookup by type: =providers.GetByType(providers.MediaTypeAnime)=
+- Health status tracking: =providers.CheckAllProviders(ctx)=
+- Runtime mode switching: =registry.Reconfigure(cfg, logger)=
+
+** Provider Architecture
+
+Greg providers support two scraping approaches:
+
+1. *Embedded Scrapers* (Local Mode - Default): Direct HTML scraping inside greg using =goquery=
+2. *External API* (Remote Mode - Optional): Delegates to external API server via HTTP
+
+#+BEGIN_EXAMPLE
+Local Mode (default):
+  greg (TUI) → Provider → Internal Scraper (goquery) → Target Website
+
+Remote Mode (optional):
+  greg (TUI) → Provider → api.Client → HTTP → API Server → Target Website
+#+END_EXAMPLE
+
+*** API Endpoints
+
+The external API server is expected to expose these endpoints.
+
+Greg's =api.Client= constructs these URLs dynamically and makes HTTP requests to them:
+
+/Anime providers:/
+- =GET /api/anime/{provider}/search?query={query}=
+- =GET /api/anime/{provider}/info/{id}=
+- =GET /api/anime/{provider}/sources/{episodeId}=
+- =GET /api/health/{provider}?type=anime=
+
+/Movies/TV providers:/
+- =GET /api/movies/{provider}/search?query={query}=
+- =GET /api/movies/{provider}/info/{id}=
+- =GET /api/movies/{provider}/sources/{episodeId}=
+- =GET /api/health/{provider}?type=movies=
+
+/Manga providers:/
+- =GET /api/manga/{provider}/search?query={query}=
+- =GET /api/manga/{provider}/info/{id}=
+- =GET /api/manga/{provider}/chapter/{chapterId}=
+- =GET /api/health/{provider}?type=manga=
+
+See =internal/providers/api/client.go= for the greg code that constructs these URLs.
+
+** Contributing Your Provider
+
+To add a new provider to greg:
+
+1. /Create provider package/: Create =internal/providers/yourprovider/=
+2. /Implement Provider interface/: Use shared API client pattern
+3. /Add caching/: Cache media info responses with custom cache struct
+4. /Implement SetConfig/: Allow runtime configuration updates
+5. /Create init.go/: Auto-register provider via =init()= function:
+   #+BEGIN_SRC go
+   package yourprovider
+
+   import "github.com/justchokingaround/greg/internal/providers"
+
+   func init() {
+       provider := NewYourProvider(nil, nil)
+       if err := providers.Register(provider); err != nil {
+           return
+       }
+   }
+   #+END_SRC
+6. /Import package/: Add import in =cmd/greg/main.go=:
+   #+BEGIN_SRC go
+   import _ "github.com/justchokingaround/greg/internal/providers/yourprovider"
+   #+END_SRC
+7. /Write tests/: Add unit tests with mock API responses
+8. /Update config/: Add provider configuration if needed:
+   #+BEGIN_SRC yaml
+   providers:
+     yourprovider:
+       mode: local
+       remote_url: ""
+   #+END_SRC
+9. /Submit PR/ with:
+   - Provider name and supported media types (=MediaType= constant)
+   - Whether it supports local mode, remote mode, or both
+   - Known limitations
+   - Example usage
+
+See [[file:dev/CONTRIBUTING.org][CONTRIBUTING.org]] for full contribution guidelines.
+
+** Resources
+
+- [[file:dev/ARCHITECTURE.org][Architecture Guide]] - System design and component overview
+- [[file:dev/CONTRIBUTING.org][Contributing Guide]] - Full contribution guidelines
+- [[file:CONFIG.org][Configuration Guide]] - Configuration reference
+
+** Support
+
+- Report provider issues: [[https://github.com/justchokingaround/greg/issues][GitHub Issues]]
+- Discuss provider ideas: [[https://github.com/justchokingaround/greg/discussions][GitHub Discussions]]

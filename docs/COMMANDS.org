@@ -1,0 +1,178 @@
+#+TITLE: COMMANDS
+#+FILETAGS: :documentation
+
+* greg Commands & Tools Reference
+
+Quick reference for development commands and workflows.
+
+** Just Commands
+
+Run =just= to see all available commands.
+
+#+BEGIN_SRC bash
+  # Development
+  just build              # Build dev binary
+  just run                # Build and run
+  just dev                # Hot reload with air
+  just run-args --        # Run with arguments
+  just install            # Install to $GOPATH/bin
+  just uninstall          # Uninstall from $GOPATH/bin
+
+  # Testing
+  just test               # Run unit tests
+  just test-coverage      # Run with coverage report
+  just test-integration   # Run integration tests
+  just test-race          # Run with race detector
+  just test-pkg <pkg>     # Test specific package
+  just bench              # Run benchmarks
+
+  # Code Quality
+
+  just lint               # Run linters (go vet, gofmt, golangci-lint)
+  just fmt                # Format code
+  just security           # Check for vulnerabilities
+  just pre-commit         # Run all checks before commit
+
+  # Building
+  just build-release      # Optimized release build
+  just build-windows      # Build Windows executable
+  just build-all          # Cross-compile for all platforms
+  just release            # Create release archives
+
+  # Dependencies
+  just deps               # Download dependencies
+  just tidy               # Tidy go.mod
+  just update-deps        # Update dependencies
+
+  # Database
+  just db-reset           # Reset database (WARNING: deletes all data)
+
+  # Development Tools
+  just tools              # Install dev tools (golangci-lint, goimports, air)
+  just doctor             # Check dev environment
+  just watch-test         # Watch and run tests on file changes
+
+  # Utilities
+  just clean              # Clean build artifacts
+  just config-init        # Generate default config file
+#+END_SRC
+
+** Common Workflows
+
+*** Starting Development
+
+#+BEGIN_SRC bash
+# First time setup
+just tools              # Install dev tools
+just deps               # Download dependencies
+just doctor             # Verify environment
+just build              # Build binary
+just test               # Run tests
+#+END_SRC
+
+*** Daily Development
+
+#+BEGIN_SRC bash
+# Start hot reload
+just dev
+
+# Or manual run
+just build && just run
+
+# Run tests while developing
+just watch-test
+#+END_SRC
+
+*** Before Committing
+
+#+BEGIN_SRC bash
+# Run all checks
+just pre-commit
+
+# Or manually
+just fmt
+just lint
+just test
+#+END_SRC
+
+*** Creating a New Provider
+#+BEGIN_SRC bash
+# Use the provider scaffolding command
+/provider
+
+# Or manually create provider structure
+mkdir -p internal/providers/newprovider
+# See docs/PROVIDERS.org for implementation guide
+
+# Test the new provider
+just test-pkg providers/newprovider
+#+END_SRC
+
+*** Testing Changes
+
+#+BEGIN_SRC bash
+# Run all tests
+just test
+
+# Test specific package
+just test-pkg providers
+
+# With coverage
+just test-coverage
+
+# Check races
+just test-race
+#+END_SRC
+
+*** Building Release
+
+#+BEGIN_SRC bash
+# Single platform
+just build-release
+
+# All platforms
+just release
+#+END_SRC
+
+*** Troubleshooting
+
+#+BEGIN_SRC bash
+# Check environment
+just doctor
+
+# Clean and rebuild
+just clean
+just build
+
+# Reset database (WARNING: deletes all data)
+just db-reset
+
+# Use debug command to diagnose issues
+/debug
+#+END_SRC
+
+** Project Structure Quick Reference
+
+#+BEGIN_SRC
+greg/
+├── cmd/
+│   ├── greg/             # Main entry point
+│   └── serve/            # Server entry point
+├── internal/
+│   ├── config/           # Configuration + logging
+│   ├── database/         # SQLite models & migrations
+│   ├── providers/        # Streaming providers
+│   ├── tracker/          # AniList integration
+│   ├── player/           # mpv control (gopv)
+│   ├── downloader/       # Download manager (native + fallback tools)
+│   ├── tui/              # Bubble Tea UI components
+│   ├── watchparty/       # WatchParty functionality
+│   ├── tracker/mapping/  # Provider-AniList mappings
+│   ├── transport/        # HTTP transport layer
+│   ├── scraper/          # HTML scraping utilities
+│   ├── history/          # Watch history management
+│   └── registry/         # Provider registry
+├── pkg/                  # Public packages (if any)
+├── justfile              # Build commands
+└── docs/                 # Documentation
+#+END_SRC

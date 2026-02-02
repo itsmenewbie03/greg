@@ -1,0 +1,101 @@
+# Binaries for programs and plugins
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+
+# Test binary, built with `go test -c`
+*.test
+
+# Output of the go coverage tool
+*.out
+coverage.txt
+coverage.html
+
+# Dependency directories
+vendor/
+
+# Go workspace file
+go.work
+
+# Build output
+/greg
+/greg-old
+dist/
+build/
+
+# IDE specific files
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Debug files
+debug
+__debug_bin
+
+# Air (hot reload) temporary files
+tmp/
+.air.toml
+
+# Application data directories (for development)
+.config/
+.cache/
+.local/
+
+# Log files
+*.log
+
+# Database files (development)
+*.db
+*.db-shm
+*.db-wal
+
+# Environment files
+.env
+.env.local
+.env.*.local
+
+# Profiling data
+*.prof
+*.pprof
+cpu.pprof
+mem.pprof
+
+# Testing
+.test/
+testdata/output/
+
+# Release artifacts
+*.tar.gz
+*.zip
+
+# Temporary files
+*.tmp
+*.temp
+
+# Development/test scripts
+*_workflow.sh
+hdrezka_*.sh
+
+# Test binaries with custom names
+greg_test
+greg_updated
+greg_*_test
+
+# Windows metadata files
+*:Zone.Identifier
+
+# Reference images and screenshots (add manually if needed)
+*.png
+*.gif
+examples/
+
+.gemini/
+gha-creds-*.json
+.aider*
+.agent-shell/
+TAGS

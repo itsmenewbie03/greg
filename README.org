@@ -1,0 +1,444 @@
+#+TITLE: README
+#+FILETAGS: :documentation
+
+* greg
+
+: A unified TUI for watching or reading all kinds of media with progress tracking (offline and online)
+
+/greg/ was initially created by combining the best features of [[https://github.com/justchokingaround/lobster][lobster]] and [[https://github.com/justchokingaround/jerry][jerry]] into a single app
+
+** Features
+
+- /Unified Media Streaming/: Watch anime, movies, TV shows and read manga from a single interface
+- /Multiple Providers/:
+- /Anime/: HiAnime (default), AllAnime (alternative), Hdrezka (alternative)
+- /Manga/: Comix (default)
+- /Provider Health Checks/: Automatically checks the status of each provider and displays it in the UI.
+- /MPV Player Integration/: Full playback control via IPC with cross-platform support
+  - Auto-return to episode list when complete
+  - Shows percentage watched and time (hh:mm:ss)
+- /Cross-Platform/: Works on Linux, macOS, Windows, and WSL with automatic platform detection
+- /AniList Integration/: Full OAuth2 authentication with automatic progress sync
+  - Watch from your AniList library
+  - Automatic progress sync when ≥85% watched
+  - Local progress tracking for <85% watched episodes
+  - Provider mapping persistence (no re-selection needed)
+  - Interactive status, score, and progress update dialogs
+  - Auto-refresh library after updates
+- /Resume Playback/: Pick up exactly where you left off for incomplete episodes, movies or chapters
+- /Concurrent Downloads/: Download manager with progress tracking and subtitle embedding
+- /TUI Snapshot Testing/: A snapshot testing framework for TUI components to prevent regressions.
+- WatchParty Support/: Watch together with synchronized playback
+- /Watch Statistics/: Track your viewing habits with detailed analytics (planned)
+
+** Installation
+
+*** Prerequisites
+
+- Go 1.21 or higher
+- mpv (video player) - Required for playback
+- ffmpeg (for downloads and subtitle embedding)
+*** From Releases (Pre-built Binaries)
+
+1. Go to the [[https://github.com/justchokingaround/greg/releases][Releases page]].
+2. Download the binary matching your operating system and architecture.
+3. Extract the archive (if compressed) and make the binary executable (on Linux/macOS):
+   #+BEGIN_SRC bash
+   chmod +x greg
+   #+END_SRC
+4. Move the binary to a directory in your system PATH (e.g., =/usr/local/bin=):
+   #+BEGIN_SRC bash
+   sudo mv greg /usr/local/bin/
+   #+END_SRC
+
+*** Using Go Install
+
+#+BEGIN_SRC bash
+go install github.com/justchokingaround/greg/cmd/greg@latest
+#+END_SRC
+
+*** From Source
+
+#+BEGIN_SRC bash
+git clone https://github.com/justchokingaround/greg.git
+cd greg
+go build -o greg cmd/greg/main.go
+sudo mv greg /usr/local/bin/
+#+END_SRC
+
+** Quick Start
+
+*** First Run
+
+#+BEGIN_SRC bash
+# Launch greg
+greg
+
+# Authenticate with AniList (for anime tracking)
+greg auth anilist
+#+END_SRC
+
+*** Basic Usage
+
+#+BEGIN_SRC bash
+# Launch interactive TUI (default behavior)
+greg
+
+# TUI Keybindings:
+# - 's'      : Search
+# - 'h'      : Watch History
+# - 'd'      : Downloads Manager
+# - 'l'      : AniList Library (Anime/Manga modes)
+# - 'tab'    : Cycle media types (Movies/TV → Anime → Manga)
+# - '1-3'    : Quick switch (1: Movies/TV, 2: Anime, 3: Manga)
+# - 'enter'  : Select / Play
+# - 'esc'    : Back / Exit
+# - 'q'      : Quit
+
+# CLI Commands (Headless/Scripting):
+# Search for content
+greg search "cowboy bebop"
+greg search "inception" --type movie
+
+# Download content
+greg download <media-id> --episode 1-12 --quality 1080p
+
+# List available providers
+greg providers list
+
+# Authenticate with AniList
+greg auth anilist
+
+# Create a WatchParty room
+greg watchparty "arcane"
+#+END_SRC
+
+** Configuration
+
+Configuration file location:
+- Linux/macOS: =~/.config/greg/config.yaml=
+- Windows: =%APPDATA%\greg\config.yaml=
+
+#+BEGIN_SRC yaml
+# API server settings (required)
+api:
+  base_url: "http://localhost:8080"  # Consumet API server URL
+  timeout: 30s                       # Request timeout
+
+# Video player settings
+player:
+  binary: mpv
+  quality: 1080p
+  resume: true
+  subtitle_language: en
+  auto_subtitles: true
+
+# Providers (defaults work out of the box)
+providers:
+  default:
+    anime: "hianime"     # Default anime provider
+    movies_and_tv: "sflix" # Default movie/TV provider
+
+  # Enable/disable individual providers
+  allanime:
+    enabled: true
+    mode: local
+  hianime:
+    enabled: true
+    mode: local
+  sflix:
+    enabled: true
+    mode: local
+  flixhq:
+    enabled: true
+    mode: local
+  hdrezka:
+    enabled: true
+    mode: local
+  comix:
+    enabled: true
+    mode: local
+
+# Tracking
+tracker:
+  anilist:
+    enabled: true
+    auto_sync: true
+    sync_threshold: 0.85  # Sync after 85% watched
+    auto_complete: true
+
+# Downloads
+downloads:
+  path: ~/Downloads/greg  # ~ works on all platforms
+  concurrent: 3
+  embed_subtitles: true
+
+# UI
+ui:
+  theme: default
+  preview_images: true
+  default_media_type: movie_tv  # Default mode: movie_tv, anime, or manga
+
+# Social
+watchparty:
+  enabled: true
+#+END_SRC
+
+/Note:/ The default provider configuration works out of the box - you only need to configure the API server URL if you would like to use an external implementation for a provider
+
+See [[file:docs/CONFIG.org][CONFIG.org]] for complete configuration options.
+
+** Features in Detail
+
+*** Provider System
+
+greg features a flexible provider architecture that supports both local and remote execution:
+
+/Architecture:/
+- /Local Mode (Default)/: Providers run directly within the application using embedded scrapers. No external server is required.
+- /Remote Mode/: Providers can be configured to delegate scraping to an external API server (useful for proxying or for closed source scrapers/decryptors).
+
+/Available Providers:/
+
+- /Anime/:
+  - /HiAnime/ (=hianime=) - Default. Very fast search (~62ms), HD quality.
+  - /AllAnime/ (=allanime=) - Alternative with multiple sources per episode.
+  - /HDRezka/ (=hdrezka_anime=) - Russian provider with multi-language support.
+
+- /Movies & TV/:
+  - /SFlix/ (=sflix=) - Default. Large library, fast responses.
+  - /FlixHQ/ (=flixhq=) - Alternative with multiple servers.
+  - /HDRezka/ (=hdrezka=) - High-quality streams with multiple dubbing options (mostly Russian).
+
+- /Manga/:
+  - /Comix/ (=comix=) - Default manga provider.
+
+/Key Features:/
+- Response caching to reduce requests
+- Quality fallback when requested quality unavailable
+- Header forwarding (Referer, Origin) for stream authentication
+- Subtitle support (VTT, SRT, ASS formats)
+
+See [[file:docs/PROVIDERS.org][PROVIDERS.org]] for details on configuration and development.
+
+*** AniList Integration
+
+Full integration with your AniList account:
+
+- /OAuth2 Authentication/: Secure token-based authentication
+- /Watch from Library/: Press Enter on any anime in your AniList library to watch
+- /Provider Mapping/: First time you select an anime, choose the provider result once - it's remembered forever
+- /Smart Progress Tracking/:
+  - Watch <85% of episode: Progress saved locally, resume from exact position next time
+  - Watch ≥85% of episode: Progress automatically synced to AniList
+  - Completed episodes: Local resume data automatically cleared
+- /Interactive Dialogs/:
+  - Update status (Watching, Completed, Paused, Dropped, Planning, Repeating)
+  - Update score (0-10 rating system)
+  - Update progress (with quick increment/decrement)
+- /Auto-Play Current Episode/: Automatically plays your next unwatched episode
+- /Live Updates/: Library auto-refreshes after playback completion
+
+*** Download Manager
+
+Robust downloading with:
+
+- Concurrent downloads (configurable workers)
+- Resume interrupted downloads
+- Automatic quality selection
+- Subtitle embedding with ffmpeg
+- Progress bars for each download
+- Batch download episodes (e.g., =1-12=, =1,3,5,7=)
+
+** Architecture
+
+greg is built with a modular architecture:
+
+#+BEGIN_SRC
+┌─────────────────────────────────────────────────────────────┐
+│                   Presentation Layer                        │
+│                      (Bubble Tea TUI)                       │
+│                                                             │
+│  ┌──────────┐  ┌──────────┐  ┌──────────┐  ┌──────────┐     │
+│  │   Home   │  │  Search  │  │ Results  │  │ Downloads│     │
+│  └────┬─────┘  └────┬─────┘  └────┬─────┘  └────┬─────┘     │
+│       │             │             │             │           │
+│  ┌──────────┐  ┌──────────┐  ┌──────────┐  ┌──────────┐     │
+│  │ Seasons  │  │ Episodes │  │  Manga   │  │   Help   │     │
+│  └────┬─────┘  └────┬─────┘  └────┬─────┘  └────┬─────┘     │
+│       │             │             │             │           │
+│  ┌──────────┐  ┌──────────┐  ┌──────────────┐   │           │
+│  │ AniList  │  │ History  │  │ProviderStatus│───┘           │
+│  └────┬─────┘  └────┬─────┘  └────┬─────────┘               │
+│       │             │             │                         │
+│       └─────────────┴─────────────┴─────────────────────────┘
+│                         │                                   │
+│                         │ Bubble Tea Update/View Loop       │
+│                         │                                   │
+└─────────────────────────┼───────────────────────────────────┘
+                          │
+┌─────────────────────────▼───────────────────────────────────┐
+│                   Service Layer                             │
+│                                                             │
+│  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐       │
+│  │   Provider   │  │   Tracker    │  │    Player    │       │
+│  │   Manager    │  │   Service    │  │   Manager    │       │
+│  │              │  │              │  │              │       │
+│  │ • API Client │  │ • AniList    │  │ • gopv IPC   │       │
+│  │ • Cache      │  │ • GraphQL    │  │ • mpv proc   │       │
+│  │ • Registry   │  │ • OAuth2     │  │              │       │
+│  └──────────────┘  └──────────────┘  └──────────────┘       │
+│                                                             │
+│  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐       │
+│  │  Download    │  │   Scraper    │  │   History    │       │
+│  │   Manager    │  │              │  │   Service    │       │
+│  │              │  │ • HTML parse │  │              │       │
+│  │ • Workers    │  │ • API calls  │  │              │       │
+│  │ • Queue      │  │              │  │              │       │
+│  │ • Native Go  │
+│  │   (primary)  │
+│  │ • yt-dlp/    │
+│  │   ffmpeg     │
+│  │   (fallback) │  └──────────────┘  └──────────────┘       │
+│  └──────────────┘                                           │
+│                                                             │
+└─────────────────────────┬───────────────────────────────────┘
+                          │
+┌─────────────────────────▼───────────────────────────────────┐
+│                  Data Layer                                 │
+│                                                             │
+│  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐       │
+│  │   HTTP       │  │   Database   │  │    Config    │       │
+│  │   Client     │  │  (GORM/SQL)  │  │   (Viper)    │       │
+│  │              │  │              │  │              │       │
+│  │ • Retry      │  │ • History    │  │ • YAML       │       │
+│  │ • Timeout    │  │ • Downloads  │  │ • Defaults   │       │
+│  │ • Cache      │  │ • Mappings   │  │ • env vars   │       │
+│  └──────────────┘  └──────────────┘  └──────────────┘       │
+│                                                             │
+│  ┌──────────────┐  ┌──────────────┐                         │
+│  │    Cache     │  │    Tools     │                         │
+│  │   (Memory)   │  │  Detector    │                         │
+│  │              │  │              │                         │
+│  │ • Metadata   │  │ • ffmpeg     │ (fallback only)              │
+│  │ • Tokens     │  │ • yt-dlp     │ (fallback only)              │
+│  │ • Responses  │  │ • mpv        │ (playback only)              │
+│  └──────────────┘  └──────────────┘                         │
+│                                                             │
+└─────────────────────────────────────────────────────────────┘
+#+END_SRC
+
+See [[file:docs/dev/ARCHITECTURE.org][ARCHITECTURE.org]] for detailed design documentation.
+
+** Development
+
+*** Building from Source
+
+#+BEGIN_SRC bash
+  # Clone the repository
+  git clone https://github.com/justchokingaround/greg.git
+  cd greg
+
+  # Install dependencies
+  just deps
+
+  # Install tools relevant for development
+  just tools
+
+  # Build binary
+  just build
+
+  # Run unit tests
+  just test
+
+  # Run with hot reloading
+  just dev
+#+END_SRC
+
+*** Project Structure
+
+#+BEGIN_SRC
+greg/
+├── cmd/greg/           # Main application entry point
+├── internal/
+│   ├── tui/           # Component-based Bubble Tea UI
+│   │   ├── components/ # Individual UI components (home, search, etc.)
+│   │   └── styles/    # UI styling
+│   ├── providers/     # Provider implementations
+│   ├── tracker/       # AniList integration
+│   ├── player/        # mpv integration
+│   ├── downloader/    # Download manager
+│   ├── database/      # SQLite for history
+│   └── config/        # Configuration
+├── pkg/               # Public packages
+└── docs/              # Documentation
+#+END_SRC
+
+*** Contributing
+
+Contributions are welcome! Please read [[file:docs/dev/CONTRIBUTING.org][CONTRIBUTING.org]] for guidelines.
+
+Use standard Go development practices:
+  - **Linting**: =golangci-lint=
+  - **Formatting**: =gofmt= and =goimports=
+  - **Testing**: Unit tests and TUI snapshot tests
+
+**** Adding New Providers
+See [[file:docs/PROVIDERS.org][PROVIDERS.org]] for a comprehensive guide on implementing new streaming providers.
+
+** Roadmap
+
+*** v1.0
+- [X] Core architecture
+- [X] FlixHQ provider (working)
+- [X] Sflix provider (working)
+- [X] AllAnime provider (working)
+- [X] HiAnime provider (working)
+- [X] Hdrezka provider (working)
+- [X] Comix (Manga) provider (working)
+- [X] AniList integration
+- [X] Download manager
+- [X] Rich TUI with search, results, and episode views
+- [X] MPV player integration with IPC
+- [X] Cross-platform support (Linux, macOS, Windows, WSL)
+- [X] Playback monitoring and progress tracking
+- [X] WatchParty integration
+- [X] Manga reading & downloading
+- [X] Provider Health Checks
+- [X] TUI Snapshot Testing
+
+*** v1.1
+- [ ] MyAnimeList integration
+- [ ] Recommendation engine
+- [ ] Enhanced statistics dashboard
+- [ ] Plugin system for custom providers
+- [ ] Trakt.tv integration (?)
+- [ ] Letterbox integration (?)
+- [ ] Multi-device sync
+- [ ] Integration with gregory (my implementation of watchparty)
+
+** Credits
+
+greg is inspired by and builds upon:
+
+- [[https://github.com/justchokingaround/lobster][lobster]] by justchokingaround
+- [[https://github.com/justchokingaround/jerry][jerry]] by justchokingaround
+
+Special thanks to the creators of:
+- [[https://github.com/charmbracelet/bubbletea][Bubble Tea]] for the TUI framework
+- [[https://mpv.io/][mpv]] for the excellent media player
+- [[https://github.com/diniamo/gopv][gopv]] for the Go mpv IPC library
+- [[https://anilist.co/][AniList]] for the tracking API
+
+** License
+
+MIT License - see [[LICENSE][LICENSE]] for details
+
+** Disclaimer
+
+This tool is for educational purposes only. Please support the official releases and streaming platforms. The developers are not responsible for how this tool is used.
+
+** Support
+
+- Report issues: [[https://github.com/justchokingaround/greg/issues][GitHub Issues]]
+- Discussions: [[https://github.com/justchokingaround/greg/discussions][GitHub Discussions]]

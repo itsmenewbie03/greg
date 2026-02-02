@@ -1,0 +1,1024 @@
+#+TITLE: ARCHITECTURE
+#+FILETAGS: :documentation
+
+* Architecture
+
+This document describes the architecture and design principles of greg.
+
+** Overview
+
+greg is built with a layered architecture that separates concerns and allows for extensibility. The application is structured in three main layers:
+
+1. /Presentation Layer/ - Terminal UI and user interaction
+2. /Service Layer/ - Use cases, workflows
+3. /Data Layer/ - External systems and data persistence
+
+** Architecture Diagram
+
+#+BEGIN_SRC
+┌─────────────────────────────────────────────────────────────┐
+│                   Presentation Layer                        │
+│                      (Bubble Tea TUI)                       │
+│                                                             │
+│  ┌──────────┐  ┌──────────┐  ┌──────────┐  ┌──────────┐     │
+│  │   Home   │  │  Search  │  │ Results  │  │ Downloads│     │
+│  └────┬─────┘  └────┬─────┘  └────┬─────┘  └────┬─────┘     │
+│       │             │             │             │           │
+│  ┌──────────┐  ┌──────────┐  ┌──────────┐  ┌──────────┐     │
+│  │ Seasons  │  │ Episodes │  │  Manga   │  │   Help   │     │
+│  └────┬─────┘  └────┬─────┘  └────┬─────┘  └────┬─────┘     │
+│       │             │             │             │           │
+│  ┌──────────┐  ┌──────────┐  ┌──────────────┐   │           │
+│  │ AniList  │  │ History  │  │ProviderStatus│───┘           │
+│  └────┬─────┘  └────┬─────┘  └────┬─────────┘               │
+│       │             │             │                         │
+│       └─────────────┴─────────────┴─────────────────────────┘
+│                         │                                   │
+│                         │ Bubble Tea Update/View Loop       │
+│                         │                                   │
+└─────────────────────────┼───────────────────────────────────┘
+                          │
+┌─────────────────────────▼───────────────────────────────────┐
+│                   Service Layer                             │
+│                                                             │
+│  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐       │
+│  │   Provider   │  │   Tracker    │  │    Player    │       │
+│  │   Manager    │  │   Service    │  │   Manager    │       │
+│  │              │  │              │  │              │       │
+│  │ • API Client │  │ • AniList    │  │ • gopv IPC   │       │
+│  │ • Cache      │  │ • GraphQL    │  │ • mpv proc   │       │
+│  │ • Registry   │  │ • OAuth2     │  │              │       │
+│  └──────────────┘  └──────────────┘  └──────────────┘       │
+│                                                             │
+│  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐       │
+│  │  Download    │  │   Scraper    │  │   History    │       │
+│  │   Manager    │  │              │  │   Service    │       │
+│  │              │  │ • HTML parse │  │              │       │
+│  │ • Workers    │  │ • API calls  │  │              │       │
+│  │ • Queue      │  │              │  │              │       │
+│  │ • Native Go  │
+│  │   (primary)  │
+│  │ • yt-dlp/    │
+│  │   ffmpeg     │
+│  │   (fallback) │  └──────────────┘  └──────────────┘       │
+│  └──────────────┘                                           │
+│                                                             │
+└─────────────────────────┬───────────────────────────────────┘
+                          │
+┌─────────────────────────▼───────────────────────────────────┐
+│                  Data Layer                                 │
+│                                                             │
+│  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐       │
+│  │   HTTP       │  │   Database   │  │    Config    │       │
+│  │   Client     │  │  (GORM/SQL)  │  │   (Viper)    │       │
+│  │              │  │              │  │              │       │
+│  │ • Retry      │  │ • History    │  │ • YAML       │       │
+│  │ • Timeout    │  │ • Downloads  │  │ • Defaults   │       │
+│  │ • Cache      │  │ • Mappings   │  │ • env vars   │       │
+│  └──────────────┘  └──────────────┘  └──────────────┘       │
+│                                                             │
+│  ┌──────────────┐  ┌──────────────┐                         │
+│  │    Cache     │  │    Tools     │                         │
+│  │   (Memory)   │  │  Detector    │                         │
+│  │              │  │              │                         │
+│  │ • Metadata   │  │ • ffmpeg     │ (fallback only)         │
+│  │ • Tokens     │  │ • yt-dlp     │ (fallback only)         │
+│  │ • Responses  │  │ • mpv        │ (playback only)         │
+│  └──────────────┘  └──────────────┘                         │
+│                                                             │
+└─────────────────────────────────────────────────────────────┘
+#+END_SRC
+
+*Note:* Player controls mpv directly without a separate TUI component (mpv renders video in its own window).
+
+** Core Interfaces
+
+*** Provider Interface
+
+All streaming providers implement this interface:
+
+#+BEGIN_SRC go
+type Provider interface {
+	// Metadata
+	Name() string
+	Type() MediaType
+
+	// Search and discovery
+	Search(ctx context.Context, query string) ([]Media, error)
+	GetTrending(ctx context.Context) ([]Media, error)
+	GetRecent(ctx context.Context) ([]Media, error)
+
+	// Media details
+	GetMediaDetails(ctx context.Context, id string) (*MediaDetails, error)
+	GetSeasons(ctx context.Context, mediaID string) ([]Season, error)
+	GetEpisodes(ctx context.Context, seasonID string) ([]Episode, error)
+
+	// Stream URLs
+	GetStreamURL(ctx context.Context, episodeID string, quality Quality) (*StreamURL, error)
+	GetAvailableQualities(ctx context.Context, episodeID string) ([]Quality, error)
+
+	// Health check
+	HealthCheck(ctx context.Context) error
+}
+#+END_SRC
+:Emacs: [[file:/home/choky/dev/greg/internal/providers/provider.go::9][provider.go:9]]
+
+*** Tracker Interface
+
+Progress tracking services implement this interface:
+
+#+BEGIN_SRC go
+type Tracker interface {
+	// Authentication
+	Authenticate(ctx context.Context) error
+	IsAuthenticated() bool
+	Logout() error
+
+	// Media library
+	GetUserLibrary(ctx context.Context, mediaType providers.MediaType) ([]TrackedMedia, error)
+	SearchMedia(ctx context.Context, query string, mediaType providers.MediaType) ([]TrackedMedia, error)
+
+	// Progress tracking
+	UpdateProgress(ctx context.Context, mediaID string, episode int, progress float64) error
+	GetProgress(ctx context.Context, mediaID string) (*Progress, error)
+
+	// Metadata updates
+	UpdateStatus(ctx context.Context, mediaID string, status WatchStatus) error
+	UpdateScore(ctx context.Context, mediaID string, score float64) error
+	UpdateDates(ctx context.Context, mediaID string, startDate, endDate *time.Time) error
+
+	// Sync
+	SyncHistory(ctx context.Context) error
+
+	// Deletion (specific to services that support it)
+	DeleteFromList(ctx context.Context, mediaListID int) error
+}
+#+END_SRC
+:Emacs: [[file:/home/choky/dev/greg/internal/tracker/tracker.go::11][tracker.go:11]]
+
+*** Player Interface
+
+Video players implement this interface:
+
+#+BEGIN_SRC go
+type Player interface {
+	// Playback control
+	Play(ctx context.Context, url string, options PlayOptions) error
+	Stop(ctx context.Context) error
+
+	// Progress monitoring
+	GetProgress(ctx context.Context) (*PlaybackProgress, error)
+	Seek(ctx context.Context, position time.Duration) error
+
+	// Callbacks
+	OnProgressUpdate(callback func(progress PlaybackProgress))
+	OnPlaybackEnd(callback func())
+	OnError(callback func(err error))
+
+	// Status
+	IsPlaying() bool
+	IsPaused() bool
+}
+#+END_SRC
+:Emacs: [[file:/home/choky/dev/greg/internal/player/player.go::9][player.go:9]]
+
+*** Downloader Interface
+
+Download managers implement this interface:
+
+#+BEGIN_SRC go
+type Downloader interface {
+	// Queue management
+	AddToQueue(ctx context.Context, task DownloadTask) error
+	RemoveFromQueue(ctx context.Context, id string) error
+	GetQueue(ctx context.Context) ([]DownloadTask, error)
+	ClearQueue(ctx context.Context) error
+
+	// Download control
+	Start(ctx context.Context) error
+	Pause(ctx context.Context, id string) error
+	Resume(ctx context.Context, id string) error
+	Cancel(ctx context.Context, id string) error
+	PauseAll(ctx context.Context) error
+	ResumeAll(ctx context.Context) error
+
+	// Progress monitoring
+	OnProgressUpdate(callback func(task DownloadTask))
+	OnDownloadComplete(callback func(task DownloadTask))
+	OnDownloadError(callback func(task DownloadTask, err error))
+
+	// Settings
+	SetConcurrency(workers int)
+	SetOutputDir(dir string)
+	SetMaxSpeed(bytesPerSecond int64) // 0 = unlimited
+}
+#+END_SRC
+:Emacs: [[file:/home/choky/dev/greg/internal/downloader/downloader.go::11][downloader.go:11]]
+
+** Data Flow
+
+*** Searching and Playing Media
+
+#+BEGIN_SRC
+┌──────┐    search     ┌──────────┐    query      ┌──────────┐
+│ User │──────────────>│   TUI    │──────────────>│ Provider │
+└──────┘               └──────────┘               │ Manager  │
+                            │                     └──────────┘
+                            │                           │
+                            │                           ▼
+                       select media              ┌────────────┐
+                            │                    │ Provider   │
+                            ▼                    │   impl     │
+                       ┌──────────┐              │(embedded   │
+                       │ Provider │              │ extraction)│
+                       │ Details  │              └────────────┘
+                       └──────────┘                    │
+                            │                    stream URL
+                            │<---------------------------+
+                            │
+                       play/download
+                            │
+           ┌─────────────────┴─────────────────┐
+           ▼                                   ▼
+    ┌────────────┐                     ┌────────────┐
+    │   mpv IPC  │                     │  Download  │
+    │(gopv ipc)  │                     │  Manager   │
+    └────────────┘                     │            │
+           │                           │ • Native   │
+           │ progress                  │   Go (1st) │
+           ▼                           │ • yt-dlp   │
+    ┌────────────┐                     │   (2nd)    │
+    │ Database   │                     │ • ffmpeg   │
+    │ (local)    │                     │   (3rd)    │
+    └────────────┘                     └────────────┘
+           │                                  │
+           ▼                           downloaded file
+    ┌────────────┐                           │
+    │ AniList    │<──────────────────────────┘
+    │ GraphQL    │        progress/status
+    └────────────┘
+          │
+          ▼
+   ┌────────────┐    sync (>85%)    ┌──────────┐
+   │ AniList    │<──────────────────│  Tracker │
+   │ GraphQL    │                   │ Service  │
+   └────────────┘                   └──────────┘
+#+END_SRC
+
+*Note:* Extraction logic is embedded within each provider implementation, not a separate Decrypt service.
+
+*** Download Flow
+
+#+BEGIN_SRC
+┌──────┐   download    ┌──────────┐   add task   ┌──────────┐
+│ User │──────────────>│   TUI    │─────────────>│ Download │
+└──────┘               └──────────┘              │ Manager  │
+                            │                    └──────────┘
+                            │                          │
+                       progress updates             spawn workers
+                            │                          │
+                            │<─────────────────────────┘
+                            │                          │
+                            ▼                          ▼
+                       ┌──────────┐              ┌──────────┐
+                       │ Progress │              │  Worker  │
+                       │   Bars   │              │   Pool   │
+                       └──────────┘              └──────────┘
+                                                     │
+                                                get stream URL
+                                                     │
+                                                     ▼
+                                              ┌──────────┐
+                                              │ Provider │
+                                              │   impl   │
+                                              └──────────┘
+                                                     │
+                                                stream URL
+                                                     │
+                                                     ▼
+                                              ┌──────────┐
+                                              │ ffmpeg   │
+                                              │   or     │
+                                              │ yt-dlp   │
+                                               └──────────┘
+                                                      │
+                                                 download
+                                                      │
+                                                      ▼
+                                               ┌──────────┐
+                                               │ Native   │
+                                               │   Go     │
+                                               │(primary) │
+                                               └──────────┘
+                                                      │
+                                                 fallback:
+                                                      │
+                                                      ▼
+                                               ┌──────────┐
+                                               │ yt-dlp   │
+                                               │ (2nd)    │
+                                               └──────────┘
+                                                      │
+                                                      ▼
+                                               ┌──────────┐
+                                               │ ffmpeg   │
+                                               │ (3rd)    │
+                                               └──────────┘
+                                                     │
+                                                     ▼
+                                              ~/Downloads/
+                                              greg/{type}/
+#+END_SRC
+
+** Component Details
+
+*** TUI Components
+
+The TUI layer is built using a component-based architecture with Bubble Tea, where each screen or major UI element is a distinct component. This allows for modularity, easier state management, and better maintainability.
+
+-   /Home Component/: The initial screen, displaying a welcome message and the current media type (Movies/TV, Anime and Manga). It handles navigation to other views, provider switching and some other quick actions.
+-   /Search Component/: Provides a text input field for users to enter their search queries. It manages the input state and triggers search actions.
+-   /Results Component/: Displays a navigable list of search results. It handles selection and rendering of media items.
+-   /Loading View/: A temporary view displayed during asynchronous operations (e.g., searching) to indicate that the application is busy. It features a spinner animation.
+-   /Error View/: A dedicated view for displaying error messages to the user, providing context about failed operations and instructions to proceed.
+
+*** Provider Manager
+
+The Provider Manager handles multiple streaming providers using an API-based architecture:
+
+/Architecture:/
+- Providers act as thin clients that make HTTP requests and map responses
+- Shared API client handles all HTTP communication
+
+/Responsibilities:/
+- Register and manage multiple providers (with the option to have them be API-based)
+- Route requests to appropriate provider based on media type and configured provider
+- Implement fallback chain if primary provider fails
+- Cache provider availability status via API health checks
+- Health checking and automatic recovery
+
+/Health Check System:/
+- Each provider implements a =HealthCheck() error= method.
+- The =Registry= runs these checks concurrently for all providers on startup.
+- Statuses (Online, Offline, Error) are stored in the registry.
+- A dedicated TUI component displays the live status of each provider.
+
+/Key Features:/
+- Shared HTTP client with connection pooling and retries
+- Response caching per provider instance to reduce API calls
+- Quality fallback when requested quality unavailable
+- Header forwarding (Referer, Origin) for stream URLs
+- Subtitle support (VTT, SRT, ASS formats)
+
+/Current Providers:/
+
+**** Anime Providers
+
+1. /HiAnime/ (=hianime=) - Default anime provider
+   - Location: =internal/providers/hianime/=
+   - Features: HD quality, MegaCloud extractor, sub/dub variants
+   - Very fast search (~62ms)
+
+2. /AllAnime/ (=allanime=) - Alternative anime provider
+   - Location: =internal/providers/anime/allanime/=
+   - Features: Fast search (~100ms), multiple sources per episode
+   - Response caching for media info
+
+3. /HDRezka/ (=hdrezka=) - Multi-type provider (also supports movies/TV)
+   - Location: =internal/providers/hdrezka/=
+   - Features: Large library, multiple extractors
+   - Supports anime, movies, and TV series
+
+**** Movies & TV Providers
+
+1. /SFlix/ (=sflix=) - Default movies/TV provider
+   - Location: =internal/providers/sflix/=
+   - Features: Large library, fast responses (~191ms search)
+   - Direct movie playback (empty seasons array)
+
+2. /FlixHQ/ (=flixhq=) - Alternative movies/TV provider
+   - Location: =internal/providers/flixhq/=
+   - Features: Multiple servers, good for TV series
+   - Multi-language subtitle support
+
+3. /HDRezka/ (=hdrezka=) - Multi-type provider (also supports anime)
+   - Location: =internal/providers/movies/hdrezka/=
+   - Features: Multiple quality options, subtitle support
+   - Good for TV series and movies
+
+**** Manga Provider
+
+1. /Comix/ (=comix=) - Manga provider
+   - Location: =internal/providers/mangaprovider/=
+   - Features: CBZ download support, chapter browsing
+   - Uses shared API client architecture
+
+*** Tracker Service (AniList)
+
+/Authentication Flow:/
+#+BEGIN_SRC
+1. Generate OAuth2 URL with client ID
+2. Open browser for user consent
+3. Receive callback with auth code
+4. Exchange code for access token
+5. Store token in keychain/encrypted file
+6. Use token for GraphQL requests
+#+END_SRC
+
+
+/Sync Strategy:/
+- Local-first: Write to local DB immediately
+- Background sync: Queue updates for cloud sync
+- Conflict resolution: Cloud takes precedence
+- Retry logic: Exponential backoff for failed syncs
+
+/GraphQL Queries:/
+- =MediaListCollection=: Fetch user's anime/manga list
+- =SaveMediaListEntry=: Update progress/status/score
+- =Media=: Search for anime by title
+- =User=: Get user profile and statistics
+
+/AniList Integration Features:/
+
+1. /Provider Mapping System:/
+   - Maps AniList anime to provider media IDs (e.g., AllAnime)
+   - User selects correct match on first playback
+   - Choice persisted in =anilist_mappings= table
+   - Future playbacks use saved mapping automatically
+
+2. /Auto-Play from Library:/
+   - Press Enter on AniList library item
+   - Automatically fetches current episode (Progress + 1)
+   - Skips season/episode selection for seamless playback
+   - Uses saved provider mapping for instant streaming
+
+3. /Progress Tracking (85% Threshold):/
+   - /< 85% watched:/ Save to local database only
+     - Stores exact second position for resume
+     - Includes AniList ID, episode number, provider info
+     - Resume playback picks up where user left off
+   - /≥ 85% watched:/ Sync to AniList
+     - Background goroutine updates AniList progress
+     - Marks episode as completed
+     - In case of anime completion, marks it as Watched and optionally (if configured) asks the user to rate the anime
+     - Auto-refreshes library to reflect changes
+
+4. /Interactive Metadata Updates:/
+   - Status updates: 6 options (Watching, Completed, Planning, etc.)
+   - Score updates: 0-10 rating with direct input
+   - Progress updates: Quick +/- controls and "mark all watched"
+   - All changes sync to AniList immediately
+
+5. /Smart Record Management:/
+   - Update existing incomplete records (prevent duplicates)
+   - Delete old incomplete records when episode completed
+   - Single source of truth for resume position
+
+*** Player Manager (mpv with gopv)
+
+/Integration with gopv:/
+
+We use [[https://github.com/diniamo/gopv][gopv]] as the foundation for mpv IPC communication. gopv handles:
+- Cross-platform socket/pipe connections (Unix sockets on Linux/macOS, named pipes on Windows)
+- JSON-RPC message serialization/deserialization
+- Low-level IPC protocol management
+
+/Player Manager layer:/
+#+BEGIN_SRC go
+type MPVPlayer struct {
+    client    *gopv.Client  // gopv IPC client
+    process   *exec.Cmd     // mpv process
+    socketPath string
+    callbacks PlayerCallbacks
+    mu        sync.RWMutex
+}
+#+END_SRC
+
+/Initialization Flow:/
+#+BEGIN_SRC
+1. Generate unique socket path (/tmp/greg-mpv-{random}.sock)
+2. Launch mpv with --input-ipc-server={socket}
+3. Wait for socket to become available
+4. Connect using gopv.NewClient(socketPath)
+5. Start monitoring goroutine for progress updates
+#+END_SRC
+
+
+/Command Examples:/
+#+BEGIN_SRC go
+// Play media
+func (p *MPVPlayer) Play(url string, options PlayOptions) error {
+    args := []interface{}{
+        "loadfile", url,
+        "replace",
+    }
+
+    // Set start position if resuming
+    if options.StartTime > 0 {
+        p.client.SetProperty("start", options.StartTime.Seconds())
+    }
+
+    // Set subtitles
+    if options.SubtitleURL != "" {
+        p.client.Command("sub-add", options.SubtitleURL)
+    }
+
+    return p.client.Command(args...)
+}
+
+// Get current progress
+func (p *MPVPlayer) GetProgress() (*PlaybackProgress, error) {
+    timePos, err := p.client.GetProperty("time-pos")
+    if err != nil {
+        return nil, err
+    }
+
+    duration, err := p.client.GetProperty("duration")
+    if err != nil {
+        return nil, err
+    }
+
+    return &PlaybackProgress{
+        CurrentTime: time.Duration(timePos.(float64)) * time.Second,
+        Duration:    time.Duration(duration.(float64)) * time.Second,
+        Percentage:  (timePos.(float64) / duration.(float64)) * 100,
+    }, nil
+}
+#+END_SRC
+:Emacs: [[file:/home/choky/dev/greg/internal/player/mpv/mpv.go::108][mpv.go:108]]
+
+/Progress Monitoring:/
+#+BEGIN_SRC go
+func (p *MPVPlayer) monitorProgress() {
+    ticker := time.NewTicker(1 * time.Second)
+    defer ticker.Stop()
+
+    for {
+        select {
+        case <-ticker.C:
+            progress, err := p.GetProgress()
+            if err != nil {
+                continue
+            }
+
+            // Trigger callbacks
+            if p.callbacks.OnProgress != nil {
+                p.callbacks.OnProgress(*progress)
+            }
+
+            // Check for completion
+            if progress.Percentage >= 99.0 {
+                if p.callbacks.OnComplete != nil {
+                    p.callbacks.OnComplete()
+                }
+            }
+        }
+    }
+}
+#+END_SRC
+:Emacs: [[file:/home/choky/dev/greg/internal/player/mpv/mpv.go::437][mpv.go:437]]
+
+
+/Event Observation (not currently implemented):/
+#+BEGIN_SRC go
+// Observe property changes using mpv's observe_property
+func (p *MPVPlayer) observeEvents() {
+    // Observe time position for accurate tracking
+    p.client.Command("observe_property", 1, "time-pos")
+
+    // Observe pause state
+    p.client.Command("observe_property", 2, "pause")
+
+    // Observe EOF (end of file)
+    p.client.Command("observe_property", 3, "eof-reached")
+
+    // Listen for property change events
+    go p.handlePropertyChanges()
+}
+#+END_SRC
+// Note: This is planned functionality. Current implementation uses polling via monitorProgress().
+
+
+/Cleanup:/
+#+BEGIN_SRC go
+func (p *MPVPlayer) Stop(ctx context.Context) error {
+    // Send quit command via gopv
+    if err := p.client.Command("quit"); err != nil {
+        // Force kill if quit fails
+        if p.process != nil {
+            p.process.Kill()
+        }
+    }
+
+    // Close gopv client
+    p.client.Close()
+
+    // Clean up socket file
+    os.Remove(p.socketPath)
+
+    return nil
+}
+#+END_SRC
+:Emacs: [[file:/home/choky/dev/greg/internal/player/mpv/mpv.go::251][mpv.go:251]]
+
+*** Download Manager
+
+/Worker Pool Architecture:/
+#+BEGIN_SRC go
+  type Manager struct {
+      mu sync.RWMutex
+
+      // Worker pool
+      workers  []*worker           // Worker instances
+      queue    chan *DownloadTask  // Buffered channel (capacity: 100)
+      active   map[string]*activeDownload
+      workerWg sync.WaitGroup
+
+      // State
+      running bool
+      ctx     context.Context
+      cancel  context.CancelFunc
+
+      // Callbacks
+      onProgress func(DownloadTask)
+      onComplete func(DownloadTask)
+      onError    func(DownloadTask, error)
+
+      // Configuration
+      config *config.DownloadsConfig
+
+      // Logger
+      logger *slog.Logger
+
+      // Database
+      db *gorm.DB
+
+      // Tools
+      ytdlp  *tools.ToolInfo
+      ffmpeg *tools.ToolInfo
+  }
+
+  // activeDownload tracks an in-progress download
+  type activeDownload struct {
+      task     *DownloadTask
+      workerID int
+      cancel   context.CancelFunc
+  }
+#+END_SRC
+:Emacs: [[file:/home/choky/dev/greg/internal/downloader/manager.go::20][manager.go:20]]
+
+
+/Methods:/
+- =Start(ctx)= - Start the worker pool
+- =Stop()= - Stop all workers gracefully
+- =AddToQueue(ctx, task)= - Add a download task to the queue
+- =RemoveFromQueue(ctx, id)= - Remove a task from the queue
+- =GetQueue(ctx)= - Get all queued and active downloads
+- =HasActiveDownloads()= - Check if any downloads are active
+- =ClearQueue(ctx)= - Clear all queued downloads
+- =Pause(ctx, id)= - Pause a specific download
+- =Resume(ctx, id)= - Resume a paused download
+- =PauseAll(ctx)= - Pause all active downloads
+- =ResumeAll(ctx)= - Resume all paused downloads
+- =Cancel(ctx, id)= - Cancel a download
+- =Retry(ctx, id)= - Retry a failed or cancelled download
+- =DeleteTaskAndFile(ctx, id)= - Delete task and associated file
+- =SetConcurrency(workers)= - Set number of concurrent workers
+- =SetOutputDir(dir)= - Set download output directory
+- =SetMaxSpeed(speed)= - Set maximum download speed (bytes/sec)
+
+
+/Implementation:/
+- /Native Go downloader/ as primary method (HLS and direct HTTP)
+  - Location: =internal/downloader/native_downloader.go=
+- /Fallback chain/: yt-dlp → ffmpeg → mpv (for protected streams)
+  - yt-dlp preferred for all streams (handles HLS/protected better)
+  - ffmpeg fallback if yt-dlp fails with 403
+  - mpv last resort for DRM-protected CDNs
+- /Worker pool/ with configurable concurrency (1-10 workers, default: 3)
+- /Database persistence/ across application restarts
+- /Auto-resume/ on startup for incomplete downloads
+- /Filename template engine/ with variables (={title}=, ={episode}=, ={season}=, ={quality}=, ={provider}=)
+- /Subtitle embedding/ via ffmpeg (optional)
+
+
+/Download Process:/
+1. Fetch stream URL from provider (as well as referer and origin)
+2. Try native Go downloader (HLS or direct HTTP)
+3. If native fails, try yt-dlp
+4. If yt-dlp fails with 403, try ffmpeg
+5. If all else fails, try mpv (last resort for DRM)
+6. Download subtitles (if available and enabled)
+7. Embed subtitles with ffmpeg (if enabled)
+8. Save to configured download directory
+9. Update database status to completed
+
+
+/Resume Logic:/
+- Store active downloads as "paused" in database on app shutdown
+- Auto-resume paused downloads on startup (configurable)
+- Partial files saved with =.part= extension
+- Keep or delete partial files on cancel (configurable)
+
+** Database Schema
+
+*** SQLite Tables
+
+#+BEGIN_SRC sql
+-- Watch history
+CREATE TABLE history (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    media_id TEXT NOT NULL,
+    media_title TEXT NOT NULL,
+    media_type TEXT NOT NULL,  -- anime, movie, tv, manga
+    episode INTEGER DEFAULT 0,
+    season INTEGER DEFAULT 0,
+    page INTEGER DEFAULT 0,          -- For manga
+    total_pages INTEGER DEFAULT 0,   -- For manga
+    progress_seconds INTEGER NOT NULL,
+    total_seconds INTEGER NOT NULL,
+    progress_percent REAL NOT NULL,
+    watched_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    completed BOOLEAN DEFAULT FALSE,
+    anilist_id INTEGER,             -- Optional AniList ID for tracking
+    provider_name TEXT,              -- Provider used for playback
+    UNIQUE(media_id, episode, season)
+);
+
+-- AniList to Provider mapping
+CREATE TABLE anilist_mappings (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    anilist_id INTEGER NOT NULL UNIQUE,
+    provider_name TEXT NOT NULL,
+    provider_media_id TEXT NOT NULL,
+    title TEXT NOT NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Watch statistics
+CREATE TABLE statistics (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    media_id TEXT NOT NULL,
+    media_type TEXT NOT NULL,
+    total_watch_time INTEGER NOT NULL,  -- seconds
+    watch_count INTEGER DEFAULT 1,
+    first_watched TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    last_watched TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    genre TEXT,
+    UNIQUE(media_id)
+);
+
+-- AniList sync queue
+CREATE TABLE sync_queue (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    media_id TEXT NOT NULL,
+    anilist_id INTEGER,
+    episode INTEGER NOT NULL,
+    progress REAL NOT NULL,
+    status TEXT,  -- watching, completed, etc.
+    score REAL,
+    synced BOOLEAN DEFAULT FALSE,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    synced_at TIMESTAMP
+);
+
+-- Settings/cache
+CREATE TABLE settings (
+    key TEXT PRIMARY KEY,
+    value TEXT NOT NULL,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Download queue
+CREATE TABLE downloads (
+    id TEXT PRIMARY KEY,
+    media_id TEXT NOT NULL,
+    media_title TEXT NOT NULL,
+    media_type TEXT NOT NULL,  -- anime, movie, tv, manga
+    episode INTEGER NOT NULL,
+    season INTEGER DEFAULT 0,
+    quality TEXT NOT NULL,
+    provider TEXT NOT NULL,
+    status TEXT NOT NULL,  -- queued, downloading, paused, completed, failed, cancelled
+    progress REAL DEFAULT 0.0,
+    bytes_downloaded INTEGER DEFAULT 0,  -- Bytes downloaded
+    total_bytes INTEGER DEFAULT 0,        -- Total bytes
+    speed INTEGER DEFAULT 0,              -- Download speed (bytes/sec)
+    error TEXT,                           -- Error message if failed
+    file_path TEXT,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    started_at TIMESTAMP,                 -- When download started
+    completed_at TIMESTAMP
+);
+#+END_SRC
+
+*** Indexes
+
+#+BEGIN_SRC sql
+CREATE INDEX idx_history_media ON history(media_id);
+CREATE INDEX idx_history_watched ON history(watched_at DESC);
+CREATE INDEX idx_statistics_type ON statistics(media_type);
+CREATE INDEX idx_sync_queue_synced ON sync_queue(synced);
+CREATE INDEX idx_downloads_status ON downloads(status);
+#+END_SRC
+
+** Configuration
+
+*** Configuration Hierarchy
+
+Priority order (highest to lowest):
+
+1. Command-line flags (highest priority)
+2. Environment variables (=GREG_*=)
+3. Config file (=~/.config/greg/config.yaml=)
+4. Default values (hard-coded, lowest priority)
+
+*** Providers Configuration
+
+/Default providers (no config required):/
+- Anime: =hianime= (very fast, HD quality)
+- Movies: =sflix= (fast, large library)
+- TV: =sflix= (fast, large library)
+
+*** XDG Base Directory Support
+
+- Config: =$XDG/CONFIG/HOME/greg/= or =~/.config/greg/=
+- Data: =$XDG/DATA/HOME/greg/= or =~/.local/share/greg/=
+- Cache: =$XDG/CACHE/HOME/greg/= or =~/.cache/greg/=
+- State: =$XDG/STATE/HOME/greg/= or =~/.local/state/greg/=
+
+** Error Handling
+
+*** Error Categories
+
+1. /User Errors/: Invalid input, authentication failures
+   - Display friendly error message in TUI
+   - Provide actionable solutions
+
+2. /Provider Errors/: Network failures, parsing errors
+   - Log detailed error for debugging
+   - Attempt failover to alternative provider
+   - Show simple "Provider unavailable" to user
+
+3. /System Errors/: Disk full, permission denied
+   - Log detailed error
+   - Display system error to user
+   - Graceful degradation when possible
+
+*** Retry Strategy
+
+- Network requests: 3 retries with exponential backoff
+- AniList sync: Infinite retries with exponential backoff (max 1 hour)
+- Download segments: 5 retries per segment
+- Provider queries: Immediate failover to next provider
+
+** Performance Considerations
+
+*** Concurrency
+
+- Provider queries: Parallel goroutines with timeout
+- Download workers: Configurable pool size (default: 3)
+- Database: Connection pool with WAL mode
+- HTTP client: Connection pooling and keep-alive
+- mpv monitoring: Separate goroutine per player instance
+
+*** Caching
+
+- Provider metadata: 5 minutes in memory
+- Stream URLs: No caching (expire quickly)
+- AniList tokens: Disk cache with refresh
+- Media posters: Disk cache in =~/.cache/greg/images/=
+
+*** Resource Limits
+
+- Max concurrent downloads: 3 (configurable)
+- Max concurrent provider queries: 5
+- HTTP timeout: 30 seconds
+- Database connection pool: 10
+- mpv IPC timeout: 5 seconds
+
+** Security
+
+*** Credentials Storage
+
+- AniList tokens: Encrypted with OS keychain
+  - macOS: Keychain Access
+  - Linux: Secret Service API (gnome-keyring)
+  - Windows: Windows Credential Manager
+- Fallback: Encrypted file with user password
+
+*** Network Security
+
+- HTTPS only for API calls
+- Certificate validation enabled
+- No sensitive data in logs
+- User agent randomization to avoid blocking
+
+*** Input Validation
+
+- Sanitize all user input
+- Validate URLs before opening browser
+- Escape shell arguments when calling external tools (yt-dlp/ffmpeg/mpv fallbacks)
+- SQL prepared statements (gorm handles this)
+
+** Testing Strategy
+
+*** Unit Tests
+
+- All public interfaces have unit tests
+ - Mock external dependencies (providers, HTTP, mpv)
+- Test error paths and edge cases
+- Aim for 80%+ coverage
+
+*** Integration Tests
+
+- Test provider implementations against real services
+- Test database migrations
+- Test configuration loading
+- Test TUI state transitions
+- Test mpv integration with mock socket
+
+*** End-to-End Tests
+
+- Automated TUI testing with tcell.SimulationScreen
+- Test complete workflows (search → play → track)
+- Test download manager with small files
+- Test error recovery
+
+** Dependencies
+
+*** Core Libraries
+
+- /cobra/ - CLI framework
+- /viper/ - Configuration management
+- /bubbletea/ - TUI framework
+- /lipgloss/ - Terminal styling
+- /bubbles/ - TUI components (spinner, textinput, list, etc.)
+- /glamour/ - Markdown rendering
+- /resty/ - HTTP client
+- /goquery/ - HTML parsing
+- /gorm/ - ORM for SQLite
+- /oauth2/ - AniList authentication
+- /shurcooL/graphql/ - GraphQL client
+- /gopv/ - mpv IPC client
+
+*** External Tools
+
+- /mpv/ - Media player (required for playback)
+- /ffmpeg/ - Video/subtitle processing (optional, used as fallback for protected streams)
+- /yt-dlp/ - Video downloader (optional, used as fallback for protected streams)
+
+** Deployment
+
+*** Binary Distribution
+
+- Single static binary (CGO disabled for SQLite pure-go driver)
+- Cross-compile for Linux, macOS, Windows
+- Compress with UPX for smaller size
+- Distribute via GitHub Releases
+
+** Future Enhancements
+
+*** Extensibility
+
+Go plugins are fragile (require same Go version, CGO flags, dependencies). Instead, use configuration-based providers:
+
+#+BEGIN_SRC yaml
+# Add custom providers via config (no code required)
+providers:
+  custom_anime:
+    type: anime
+    base_url: "https://api.example.com"
+    headers:
+      User-Agent: "greg/1.0"
+    timeout: 30s
+  custom_movies:
+    type: movie
+    base_url: "https://movies.example.com"
+    quality_preference: [1080p, 720p, 480p]
+#+END_SRC
+
+For complex providers requiring custom logic, run as a separate service and configure greg to use it:
+
+#+BEGIN_SRC yaml
+providers:
+  remote_provider:
+    type: anime
+    mode: remote
+    remote_url: "http://localhost:9999"
+#+END_SRC
+
+*** gRPC API
+
+Expose greg functionality via gRPC for:
+- Mobile apps
+- Web interface
+- Third-party integrations
+
+*** Distributed Sync
+
+Sync watch history across devices without cloud services:
+- P2P sync via libp2p
+- Local network discovery
+- Encrypted sync protocol

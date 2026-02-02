@@ -1,0 +1,740 @@
+#+TITLE: CONTRIBUTING
+#+FILETAGS: :documentation
+
+* Contributing to greg
+
+Thank you for your interest in contributing to greg! This guide will help you get started with development and making contributions.
+
+** Table of Contents
+
+- [[#quick-start][Quick Start]]
+- [[#prerequisites][Prerequisites]]
+- [[#development-setup][Development Setup]]
+- [[#development-workflow][Development Workflow]]
+- [[#project-structure][Project Structure]]
+- [[#making-changes][Making Changes]]
+- [[#testing][Testing]]
+- [[#code-style][Code Style]]
+- [[#submitting-changes][Submitting Changes]]
+- [[#common-tasks][Common Tasks]]
+- [[#getting-help][Getting Help]]
+
+** Quick Start
+
+#+BEGIN_SRC bash
+# Clone and setup
+git clone https://github.com/justchokingaround/greg.git
+cd greg
+just deps              # Download dependencies
+just tools             # Install dev tools
+just doctor            # Verify environment
+just build             # Build binary
+just test              # Run tests
+#+END_SRC
+
+** Prerequisites
+
+*** Required
+
+- *Go 1.21+* - [[https://go.dev/dl/][Download Go]]
+- *just* - Command runner ([[https://github.com/casey/just][install just]])
+- *Git* - Version control
+- *mpv* - Video player ([[https://mpv.io/installation/][install mpv]])
+
+*** Recommended
+
+- *golangci-lint* - Linter (installed via =just tools=)
+- *goimports* - Import organizer (installed via =just tools=)
+- *air* - Hot reload for development (installed via =just tools=)
+- *ffmpeg* - For download functionality (optional)
+
+*** Check Your Environment
+
+#+BEGIN_SRC bash
+just doctor
+#+END_SRC
+
+This will verify:
+- Go version
+- Required dependencies (mpv, ffmpeg)
+- Development tools (golangci-lint, air)
+- Project status (go.mod, binary)
+
+** Development Setup
+
+*** 1. Fork and Clone
+
+#+BEGIN_SRC bash
+# Fork the repository on GitHub, then:
+git clone https://github.com/justchokingaround/greg.git
+cd greg
+
+# Add upstream remote
+git remote add upstream https://github.com/justchokingaround/greg.git
+
+# Verify remotes
+git remote -v
+#+END_SRC
+
+*** 2. Install Dependencies
+
+#+BEGIN_SRC bash
+# Download Go dependencies
+just deps
+
+# Install development tools
+just tools
+#+END_SRC
+
+*** 3. Build and Run
+
+#+BEGIN_SRC bash
+# Build development binary
+just build
+
+# Run the binary
+just run
+
+# Or build and run with arguments
+just run-args --help
+#+END_SRC
+
+*** 4. Hot Reload Development
+
+For rapid development with automatic rebuilds:
+
+#+BEGIN_SRC bash
+# Start hot reload (requires air)
+just dev
+#+END_SRC
+
+This will automatically rebuild and restart when you save changes.
+
+** Development Workflow
+
+*** Daily Development
+
+#+BEGIN_SRC bash
+# Start hot reload for rapid iteration
+just dev
+
+# Or manually build and run
+just build && just run
+
+# Watch tests in another terminal
+just watch-test
+#+END_SRC
+
+*** Before Committing
+
+#+BEGIN_SRC bash
+# Run all pre-commit checks (formats, lints, tests)
+just pre-commit
+#+END_SRC
+
+This runs:
+1. =just fmt= - Format code with gofmt and goimports
+2. =just lint= - Run go vet and golangci-lint
+3. =just test= - Run all unit tests
+
+If this passes, you're good to commit!
+
+*** Keep Your Fork Updated
+
+#+BEGIN_SRC bash
+git fetch upstream
+git checkout main
+git merge upstream/main
+git push origin main
+#+END_SRC
+
+** Project Structure
+
+#+BEGIN_SRC
+greg/
+├── cmd/
+│   └── greg/             # Main entry point
+├── internal/             # Internal packages (not importable)
+│   ├── config/           # Configuration + logging
+│   ├── database/         # SQLite database + migrations
+│   ├── downloader/       # Download manager (native Go + fallback tools)
+│   ├── history/          # Watch history management
+│   ├── player/           # mpv player control (gopv IPC)
+│   ├── providers/        # Streaming providers
+│   │   ├── api/          # Shared API client
+│   │   ├── hianime/      # HiAnime provider (API-only)
+│   │   ├── sflix/        # SFlix provider (dual implementation)
+│   │   ├── movies/       # Internal movie scrapers
+│   │   │   └── sflix/    # SFlix embedded scraper
+│   │   └── anime/        # Internal anime scrapers
+│   ├── registry/         # Provider registry
+│   ├── scraper/          # HTML scraping utilities
+│   ├── tracker/          # AniList integration (OAuth2 + GraphQL)
+│   ├── transport/        # HTTP transport layer
+│   ├── tui/              # Bubble Tea UI components
+│   │   ├── components/   # Reusable TUI components
+│   │   ├── pages/        # Full-screen pages
+│   │   └── styles/       # Theme and styling
+│   └── watchparty/       # WatchParty functionality
+├── pkg/                   # Public packages (importable)
+│   ├── extractors/       # URL extractors
+│   ├── interfaces/       # Public interfaces
+│   ├── types/            # Public types
+│   └── utils/            # Public utilities
+├── docs/                  # Documentation
+│   ├── COMMANDS.org      # Just commands reference
+│   ├── CONFIG.org        # Configuration guide
+│   ├── PROVIDERS.org     # Provider development guide
+│   └── dev/
+│       ├── ARCHITECTURE.org  # System architecture
+│       └── CONTRIBUTING.org  # This file
+├── justfile               # Build commands and tasks
+└── AGENTS.md              # AI agent documentation
+#+END_SRC
+
+See [[file:ARCHITECTURE.org][ARCHITECTURE.org]] for detailed architecture documentation.
+
+** Making Changes
+
+*** Branch Naming
+
+Create descriptive branches:
+
+#+BEGIN_SRC bash
+# Feature branches
+git checkout -b feature/add-crunchyroll-provider
+git checkout -b feature/download-queue-ui
+
+# Bug fix branches
+git checkout -b fix/player-crash-on-exit
+git checkout -b fix/search-special-characters
+
+# Documentation branches
+git checkout -b docs/update-provider-guide
+#+END_SRC
+
+*** Commit Messages
+
+Follow [[https://www.conventionalcommits.org/][Conventional Commits]] format:
+
+#+BEGIN_SRC
+type(scope): subject
+
+body (optional)
+
+footer (optional)
+#+END_SRC
+
+*Types:*
+- =feat= - New feature
+- =fix= - Bug fix
+- =docs= - Documentation only
+- =style= - Code style (formatting, no logic change)
+- =refactor= - Code refactoring
+- =perf= - Performance improvement
+- =test= - Adding or updating tests
+- =chore= - Maintenance (dependencies, build, etc.)
+
+*Examples:*
+
+#+BEGIN_SRC
+feat(providers): add Crunchyroll provider
+
+Implement new anime provider with:
+- Search functionality
+- Episode listing
+- Stream URL extraction
+- Subtitle support
+
+Closes #123
+#+END_SRC
+
+#+BEGIN_SRC
+fix(player): prevent crash when mpv exits unexpectedly
+
+Add proper cleanup and error handling when mpv process
+terminates. Check if IPC socket exists before attempting
+communication.
+
+Fixes #456
+#+END_SRC
+
+** Testing
+
+*** Running Tests
+
+#+BEGIN_SRC bash
+# Run all unit tests
+just test
+
+# Run with verbose output
+go test -v ./...
+
+# Run specific package tests
+just test-pkg providers
+
+# Run tests with coverage
+just test-coverage
+
+# Check for race conditions
+just test-race
+
+# Run benchmarks
+just bench
+#+END_SRC
+
+*** Integration Tests
+
+Integration tests require network access and are tagged separately:
+
+#+BEGIN_SRC bash
+# Run integration tests
+just test-integration
+
+# Run only integration tests
+go test -tags=integration -run Integration ./...
+#+END_SRC
+
+*** Writing Tests
+
+**** Unit Tests
+
+#+BEGIN_SRC go
+func TestProviderSearch(t *testing.T) {
+    // Arrange
+    provider := NewTestProvider()
+    ctx := context.Background()
+
+    // Act
+    results, err := provider.Search(ctx, "test query")
+
+    // Assert
+    assert.NoError(t, err)
+    assert.NotEmpty(t, results)
+    assert.Equal(t, "Expected Title", results[0].Title)
+}
+#+END_SRC
+
+**** Table-Driven Tests (Recommended)
+
+#+BEGIN_SRC go
+func TestParseQuality(t *testing.T) {
+    tests := []struct {
+        name     string
+        input    string
+        expected Quality
+        wantErr  bool
+    }{
+        {"1080p", "1080p", Quality1080p, false},
+        {"720p", "720p", Quality720p, false},
+        {"HD", "hd", Quality720p, false},
+        {"invalid", "999p", "", true},
+    }
+
+    for _, tt := range tests {
+        t.Run(tt.name, func(t *testing.T) {
+            result, err := ParseQuality(tt.input)
+
+            if tt.wantErr {
+                assert.Error(t, err)
+                return
+            }
+
+            assert.NoError(t, err)
+            assert.Equal(t, tt.expected, result)
+        })
+    }
+}
+#+END_SRC
+
+**** Mocking HTTP Responses
+
+#+BEGIN_SRC go
+func TestHTTPProvider(t *testing.T) {
+    // Create test server
+    server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+        w.WriteHeader(http.StatusOK)
+        json.NewEncoder(w).Encode(map[string]interface{}{
+            "results": []map[string]string{
+                {"id": "1", "title": "Test Media"},
+            },
+        })
+    }))
+    defer server.Close()
+
+    // Test provider with mock server
+    provider := NewProvider(server.URL, 30*time.Second)
+    results, err := provider.Search(context.Background(), "test")
+
+    assert.NoError(t, err)
+    assert.Len(t, results, 1)
+    assert.Equal(t, "Test Media", results[0].Title)
+}
+#+END_SRC
+
+**** TUI Snapshot Testing
+
+To prevent UI regressions, use snapshot testing for Bubble Tea components:
+
+#+BEGIN_SRC go
+// in internal/tui/components/mycomponent/mycomponent_test.go
+package mycomponent
+
+import (
+    "flag"
+    "os"
+    "testing"
+    "github.com/justchokingaround/greg/internal/tui/tuitest"
+)
+
+func TestMain(m *testing.M) {
+    flag.Parse()
+    os.Exit(m.Run())
+}
+
+func TestMyComponentView(t *testing.T) {
+    model := New() // Initialize component
+    view := model.View()
+    tuitest.AssertSnapshot(t, view)
+}
+#+END_SRC
+
+*Generate/update snapshots:*
+
+#+BEGIN_SRC bash
+go test -v ./... -update
+#+END_SRC
+
+The snapshot (=.snap= file) will be created in =testdata/= directory.
+
+*** Test Coverage
+
+Aim for *80%+ coverage* for new code:
+
+#+BEGIN_SRC bash
+# Generate coverage report
+just test-coverage
+
+# View in browser
+go tool cover -html=coverage.out
+#+END_SRC
+
+** Code Style
+
+*** Formatting
+
+#+BEGIN_SRC bash
+# Format all code (gofmt + goimports)
+just fmt
+#+END_SRC
+
+Run this before every commit. The pre-commit check will fail if code is not formatted.
+
+*** Linting
+
+#+BEGIN_SRC bash
+# Run all linters
+just lint
+
+# Auto-fix some issues
+golangci-lint run --fix
+#+END_SRC
+
+*** Go Style Guidelines
+
+Follow [[https://go.dev/wiki/CodeReviewComments][Go Code Review Comments]] and [[https://google.github.io/styleguide/go/][Google's Go Style Guide]].
+
+*Key principles:*
+
+1. *Error Handling* - Always wrap errors with context
+   #+BEGIN_SRC go
+   // Good
+   if err != nil {
+       return fmt.Errorf("failed to fetch media %s: %w", id, err)
+   }
+
+   // Bad
+   if err != nil {
+       return err  // No context
+   }
+   #+END_SRC
+
+2. *Context* - Always pass =context.Context= as first parameter
+   #+BEGIN_SRC go
+   // Good
+   func Search(ctx context.Context, query string) ([]Media, error)
+
+   // Bad
+   func Search(query string) []Media  // Missing context and error
+   #+END_SRC
+
+3. *Don't Panic* - Return errors instead of panicking
+   #+BEGIN_SRC go
+   // Good
+   func ParseURL(urlStr string) (*url.URL, error) {
+       u, err := url.Parse(urlStr)
+       if err != nil {
+           return nil, fmt.Errorf("invalid URL: %w", err)
+       }
+       return u, nil
+   }
+
+   // Bad
+   func ParseURL(urlStr string) *url.URL {
+       u, err := url.Parse(urlStr)
+       if err != nil {
+           panic(err)  // Don't panic in library code!
+       }
+       return u
+   }
+   #+END_SRC
+
+4. *Names* - Use clear, descriptive names
+   - Packages: short, lowercase, single-word (=providers=, =player=, =config=)
+   - Functions: camelCase with verb (=GetMedia=, =ParseURL=, =ValidateConfig=)
+   - Interfaces: noun or agent noun (=Provider=, =Player=, =Downloader=)
+   - Variables: short for small scopes (=i=, =err=, =ctx=), descriptive for large scopes
+
+5. *Comments* - Document all exported items
+   #+BEGIN_SRC go
+   // Search queries the provider for media matching the given query string.
+   // It returns a list of matching media items or an error if the search fails.
+   //
+   // The search is case-insensitive and supports partial matching.
+   func Search(ctx context.Context, query string) ([]Media, error) {
+       // ...
+   }
+   #+END_SRC
+
+*** Project-Specific Patterns
+
+*Provider Implementation:*
+- Always implement full =Provider= interface
+- Cache API responses to reduce redundant calls
+- Handle all errors gracefully, never panic
+- See [[file:../PROVIDERS.org][PROVIDERS.org]] for detailed guide
+
+*TUI Components:*
+- Follow Bubble Tea patterns (Model/Init/Update/View)
+- Handle all keyboard inputs
+- Test with different terminal sizes
+- Use theme colors from =internal/tui/styles=
+
+*HTTP Clients:*
+- Use =internal/providers/http= client with retry logic
+- Always set timeouts
+- Add proper User-Agent headers
+- Handle rate limiting
+
+** Submitting Changes
+
+*** Pull Request Checklist
+
+Before creating a PR:
+
+1. [ ] Run =just pre-commit= and ensure it passes
+2. [ ] Update documentation if needed
+3. [ ] Add tests for new functionality
+4. [ ] Update CHANGELOG if significant change
+5. [ ] Commit messages follow conventional format
+6. [ ] Branch is up to date with upstream/main
+
+*** Creating the Pull Request
+
+#+BEGIN_SRC bash
+# Update your branch
+git fetch upstream
+git rebase upstream/main
+
+# Run pre-commit checks
+just pre-commit
+
+# Push to your fork
+git push origin feature/your-feature-name
+#+END_SRC
+
+Then:
+1. Go to [[https://github.com/justchokingaround/greg][GitHub repository]]
+2. Click "New Pull Request"
+3. Select your fork and branch
+4. Fill out the PR template
+
+** Common Tasks
+
+*** Adding a New Provider
+
+#+BEGIN_SRC bash
+# 1. Create provider package
+mkdir -p internal/providers/myprovider
+
+# 2. Implement provider (see PROVIDERS.org for full guide)
+# - Implement Provider interface
+# - Add unit tests
+# - Add integration tests
+# - Register in init.go
+
+# 3. Test your provider
+just test-pkg providers/myprovider
+
+# 4. Update documentation
+# Edit docs/PROVIDERS.org to add your provider
+#+END_SRC
+
+See [[file:../PROVIDERS.org][PROVIDERS.org]] for comprehensive provider development guide.
+
+*** Building a TUI Component
+
+#+BEGIN_SRC bash
+# 1. Create component directory
+mkdir -p internal/tui/components/mycomponent
+
+# 2. Implement Bubble Tea Model interface
+# - Init() (tea.Model, tea.Cmd)
+# - Update(tea.Msg) (tea.Model, tea.Cmd)
+# - View() string
+
+# 3. Add keyboard shortcuts
+# - Use consistent key bindings
+# - Document in help screen
+
+# 4. Add snapshot tests
+# - Create mycomponent_test.go
+# - Use tuitest.AssertSnapshot()
+
+# 5. Integrate with main UI
+# - Wire up in internal/tui/app.go
+#+END_SRC
+
+*** Running Specific Tests
+
+#+BEGIN_SRC bash
+# Test specific package
+just test-pkg providers
+
+# Test specific file
+go test -v ./internal/providers/sflix/sflix_test.go
+
+# Test specific function
+go test -v -run TestSearch ./internal/providers/...
+
+# Test with verbose output
+go test -v ./...
+#+END_SRC
+
+*** Debugging
+
+#+BEGIN_SRC bash
+# Build with debug symbols
+go build -gcflags="all=-N -l" -o greg cmd/greg/main.go
+
+# Run with delve debugger
+dlv debug cmd/greg/main.go
+
+# Add debug logging
+# Use logger from internal/config
+logger.Debug("Debug message", "key", value)
+#+END_SRC
+
+*** Database Operations
+
+#+BEGIN_SRC bash
+# Reset database (WARNING: deletes all data)
+just db-reset
+
+# Database is located at:
+# ~/.local/share/greg/greg.db
+
+# View database with sqlite3
+sqlite3 ~/.local/share/greg/greg.db
+#+END_SRC
+
+*** Building for Release
+
+#+BEGIN_SRC bash
+# Build optimized binary
+just build-release
+
+# Build for Windows
+just build-windows
+
+# Build for all platforms
+just build-all
+
+# Create release archives
+just release
+#+END_SRC
+
+** Getting Help
+
+*** Resources
+
+- *Documentation*
+  - [[file:../COMMANDS.org][COMMANDS.org]] - Just commands reference
+  - [[file:../PROVIDERS.org][PROVIDERS.org]] - Provider development guide
+  - [[file:../CONFIG.org][CONFIG.org]] - Configuration options
+  - [[file:ARCHITECTURE.org][ARCHITECTURE.org]] - System architecture
+  - [[file:../../AGENTS.md][AGENTS.md]] - AI agent documentation
+
+- *Community*
+  - [[https://github.com/justchokingaround/greg/issues][GitHub Issues]] - Bug reports and feature requests
+  - [[https://github.com/justchokingaround/greg/discussions][GitHub Discussions]] - Questions and general discussion
+
+*** Reporting Bugs
+
+When reporting bugs, include:
+
+1. *Description* - Clear description of the bug
+2. *Steps to Reproduce* - Exact steps to reproduce
+3. *Expected Behavior* - What should happen
+4. *Actual Behavior* - What actually happens
+5. *Environment*
+   - OS and version
+   - greg version (=greg version=)
+   - Go version (=go version=)
+   - mpv version (=mpv --version=)
+6. *Logs* - Relevant error messages or logs
+7. *Screenshots* - If applicable
+
+*** Feature Requests
+
+When requesting features, include:
+
+1. *Use Case* - What problem does this solve?
+2. *Proposed Solution* - How should it work?
+3. *Alternatives* - Other solutions you've considered
+4. *Additional Context* - Screenshots, examples, references
+
+** Development Tips
+
+*** Quick Commands Reference
+
+#+BEGIN_SRC bash
+# Most used commands
+just build              # Build binary
+just run                # Build and run
+just dev                # Hot reload
+just test               # Run tests
+just pre-commit         # Pre-commit checks
+just fmt                # Format code
+just lint               # Run linters
+
+# See all commands
+just --list
+#+END_SRC
+
+*** Performance Tips
+
+- Use =just bench= to benchmark code changes
+- Run =just test-race= to detect race conditions
+- Profile with =go tool pprof= for performance bottlenecks
+- Use =just test-coverage= to identify untested code paths
+
+** License
+
+By contributing, you agree that your contributions will be licensed under the MIT License.
+
+---
+
+*Thank you for contributing to greg!* 🎉
+
+Your contributions help make greg better for everyone.

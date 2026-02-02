@@ -1,0 +1,392 @@
+# greg Configuration File
+# This is the default configuration for greg
+
+# ============================================================================
+# API Settings
+# ============================================================================
+api:
+  base_url: "http://localhost:8080"  # API server URL (default)
+  timeout: 30s                       # Request timeout
+
+# ============================================================================
+# Player Settings
+# ============================================================================
+player:
+  # Video player to use (mpv, vlc, iina)
+  binary: mpv
+
+  # Additional mpv arguments
+  mpv_args:
+    - --hwdec=auto
+    - --profile=gpu-hq
+    - --keep-open=yes
+
+  # Default video quality (360p, 480p, 720p, 1080p, 1440p, 2160p, auto)
+  quality: 1080p
+
+  # Automatically resume from last position
+  resume: true
+
+  # Subtitle language preference (ISO 639-1 codes)
+  subtitle_language: en
+
+  # Automatically load subtitles
+  auto_subtitles: true
+
+  # Audio preference (sub, dub)
+  audio_preference: sub
+
+  # IPC socket timeout
+  ipc_timeout: 5s
+
+  # Load user mpv config file (overrides --no-config flag if false)
+  load_user_config: true
+
+# ============================================================================
+# Provider Settings
+# ============================================================================
+providers:
+  # Default providers for each media type
+  default:
+    anime: hianime
+    movies_and_tv: sflix
+
+  # Provider priority order (first available wins)
+  priority:
+    anime:
+      - hianime
+      - allanime
+      - hdrezka_anime
+      - aniwatch
+    movies:
+      - sflix
+    tv:
+      - sflix
+
+  # Provider-specific settings
+  hianime:
+    enabled: true
+    mode: "local"
+    # remote_url: "http://localhost:3000" # Required if mode is "remote"
+    base_url: "https://hianime.to"
+    api_url: ""
+    timeout: 30s
+    max_retries: 3
+    rate_limit: 2
+
+  allanime:
+    enabled: true
+    mode: "local"
+    # remote_url: "http://localhost:3000" # Required if mode is "remote"
+    base_url: ""
+    api_url: "https://api.allanime.co/api"
+    timeout: 30s
+    max_retries: 3
+    rate_limit: 2
+
+  sflix:
+    enabled: true
+    mode: "local"
+    # remote_url: "http://localhost:3000" # Required if mode is "remote"
+    base_url: "https://sflix.ps"
+    api_url: ""
+    timeout: 30s
+    max_retries: 3
+    rate_limit: 5
+
+  flixhq:
+    enabled: true
+    mode: "local"
+    # remote_url: "http://localhost:3000" # Required if mode is "remote"
+    base_url: "https://flixhq.to"
+    api_url: ""
+    timeout: 30s
+    max_retries: 3
+    rate_limit: 5
+
+  hdrezka:
+    enabled: true
+    mode: "local"
+    # remote_url: "http://localhost:3000" # Required if mode is "remote"
+    base_url: "https://hdrezka.website"
+    api_url: ""
+    timeout: 30s
+    max_retries: 3
+    rate_limit: 2
+
+  comix:
+    enabled: true
+    mode: "local"
+    # remote_url: "http://localhost:3000" # Required if mode is "remote"
+    base_url: "https://comix.net"
+    api_url: ""
+    timeout: 30s
+    max_retries: 3
+    rate_limit: 2
+
+  # Provider health check interval
+  health_check_interval: 5m
+
+  # Enable automatic failover to next provider
+  auto_failover: true
+
+# ============================================================================
+# Tracker Settings (AniList)
+# ============================================================================
+tracker:
+  anilist:
+    # Enable AniList integration
+    enabled: true
+
+    # Automatically sync progress
+    auto_sync: true
+
+    # Progress threshold before updating (0.0-1.0)
+    # 0.85 means sync after 85% watched
+    sync_threshold: 0.85
+
+    # Update status to "Completed" when finished
+    auto_complete: true
+
+    # Sync interval for background sync
+    sync_interval: 5m
+
+    # OAuth2 redirect URI
+    redirect_uri: "http://localhost:8000/oauth/callback"
+
+    # OAuth2 server port
+    server_port: 8000
+
+# ============================================================================
+# Download Settings
+# ============================================================================
+downloads:
+  # Download directory
+  path: ~/Videos/greg
+
+  # Number of concurrent downloads
+  concurrent: 3
+
+  # Number of concurrent segment downloads (for HLS/DASH)
+  concurrent_segments: 5
+
+  # Embed subtitles in downloaded files
+  embed_subtitles: true
+
+  # Subtitle languages to download (ISO 639-1 codes)
+  subtitle_languages:
+    - en
+    - ja
+
+  # Automatically resume interrupted downloads
+  auto_resume: true
+
+  # Keep partial downloads on error
+  keep_partial: true
+
+  # File naming template
+  # Available variables: {title}, {episode}, {season}, {quality}, {year}
+  filename_template: "{title} - S{season:02d}E{episode:02d} [{quality}]"
+
+  # For anime (no season):
+  anime_filename_template: "{title} - {episode:03d} [{quality}]"
+
+  # For movies:
+  movie_filename_template: "{title} ({year}) [{quality}]"
+
+  # Maximum download speed in KB/s (0 = unlimited)
+  max_speed: 0
+
+  # Minimum free disk space in GB before refusing downloads
+  min_free_space: 5
+
+# ============================================================================
+# User Interface Settings
+# ============================================================================
+ui:
+  # Theme (default, dracula, nord, monokai)
+  theme: default
+
+  # Show image previews in search results
+  preview_images: true
+
+  # Image preview method (kitty, sixel, chafa, none)
+  preview_method: auto
+
+  # Preview image size
+  preview_size:
+    width: 40
+    height: 20
+
+  # Show progress bar during playback
+  show_progress: true
+
+  # Compact mode (less spacing, more content)
+  compact: false
+
+  # Key bindings (vim-style by default)
+  keybindings:
+    quit: q
+    search: /
+    help: "?"
+    select: enter
+    back: esc
+    scroll_up: k
+    scroll_down: j
+    page_up: ctrl+u
+    page_down: ctrl+d
+
+  # Date/time format (Go time format)
+  date_format: "2006-01-02"
+  time_format: "15:04"
+
+  # Fuzzy finder (fzf, builtin)
+  fuzzy_finder: builtin
+
+  # Manga preview method (kitty, sixel, chafa, none)
+  manga_method: sixel
+
+  # Show loading spinner during operations
+  show_loading: false
+
+  # Default media type on startup (movie_tv, anime, or manga)
+  # Defaults to movie_tv if not specified
+  default_media_type: movie_tv
+
+# ============================================================================
+# WatchParty Settings
+# ============================================================================
+watchparty:
+  # Enable WatchParty integration
+  enabled: true
+
+  # Default m3u8 proxy URL (leave empty to require --proxy flag)
+  # Example proxy service: https://forms-energy-emotions-enquiry.trycloudflare.com/
+  default_proxy: ""  # You can set this to the example proxy if needed
+
+  # Auto-open browser when creating WatchParty room
+  auto_open_browser: true
+
+  # Default origin header for proxied streams
+  default_origin: "https://videostr.net"
+
+# ============================================================================
+# Cache Settings
+# ============================================================================
+cache:
+  # Enable caching
+  enabled: true
+
+  # Cache directory
+  path: ~/.cache/greg
+
+  # Cache TTL for different types
+  ttl:
+    metadata: 5m
+    images: 24h
+    search_results: 10m
+    stream_urls: 1m
+
+  # Maximum cache size in MB
+  max_size: 500
+
+  # Clean up cache on exit
+  cleanup_on_exit: false
+
+# ============================================================================
+# Database Settings
+# ============================================================================
+database:
+  # Database file location
+  path: ~/.local/share/greg/greg.db
+
+  # Enable WAL mode for better performance
+  wal_mode: true
+
+  # Maximum number of database connections
+  max_connections: 10
+
+  # Automatically vacuum database
+  auto_vacuum: true
+
+  # Backup database on exit
+  backup_on_exit: false
+
+# ============================================================================
+# Logging Settings
+# ============================================================================
+logging:
+  # Log level (debug, info, warn, error)
+  level: info
+
+  # Log file location
+  file: ~/.local/state/greg/greg.log
+
+  # Maximum log file size in MB
+  max_size: 10
+
+  # Number of log files to keep
+  max_backups: 3
+
+  # Maximum age of log files in days
+  max_age: 7
+
+  # Compress rotated log files
+  compress: true
+
+  # Log format (json, text)
+  format: text
+
+  # Enable colored output (for text format)
+  color: true
+
+# ============================================================================
+# Network Settings
+# ============================================================================
+network:
+  # HTTP timeout in seconds
+  timeout: 30
+
+  # Enable HTTP/2
+  http2: true
+
+  # Maximum idle connections
+  max_idle_conns: 100
+
+  # Idle connection timeout in seconds
+  idle_conn_timeout: 90
+
+  # User agent string
+  user_agent: "greg/1.0.0"
+
+  # Proxy URL (http://proxy:port or socks5://proxy:port)
+  proxy: ""
+
+  # Enable TLS certificate verification
+  verify_tls: true
+
+  # DNS servers (leave empty for system default)
+  dns_servers: []
+
+# ============================================================================
+# Advanced Settings
+# ============================================================================
+advanced:
+  # Enable experimental features
+  experimental: false
+
+  # Enable debug mode
+  debug: false
+
+  # Disable telemetry (greg doesn't collect any by default)
+  no_telemetry: true
+
+  # Performance profiling (cpu, mem, block, mutex)
+  # profiling: []
+
+  # Maximum goroutines for concurrent operations
+  max_goroutines: 100
+
+  # Clipboard command for copying streams (e.g., "clip.exe" for WSL)
+  clipboard:
+    command: ""

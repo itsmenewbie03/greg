@@ -1,0 +1,933 @@
+#+TITLE: CONFIG
+#+FILETAGS: :documentation
+
+* Configuration Reference
+
+This document describes all configuration options available in greg.
+
+*Last Updated:* January 2026
+
+*What's New:*
+- **Windows Support Improved:** Now uses proper Windows conventions (=%APPDATA%=, =%LOCALAPPDATA%=) instead of Unix-style paths
+- Added manga support with =comix= provider
+- New =manga_method= UI setting for terminal-based manga reading
+- Added =default_media_type= to set startup interface (anime/movies/manga)
+- Added =load_user_config= for mpv config integration
+- Updated provider list with current available providers (hianime, gogoanime, dramacool, etc.)
+- Separated movies and TV into combined =movies_and_tv= default setting
+- Added =clipboard= settings for WSL users
+- Added =show_loading= UI option
+- Added internal =api= configuration section
+- **Removed:** Syncplay integration (discontinued)
+- **Improved:** Configuration hierarchy documentation with clearer examples
+
+** Configuration File Location
+
+greg follows platform conventions for configuration files:
+
+- /Linux/macOS/: =~/.config/greg/config.yaml= (XDG Base Directory)
+- /Windows/: =%APPDATA%\greg\config.yaml= (e.g., =C:\Users\YourName\AppData\Roaming\greg\config.yaml=)
+
+Other important directories:
+- *Cache*: =~/.cache/greg= (Linux/macOS), =%LOCALAPPDATA%\greg= (Windows)
+- *Data/Database*: =~/.local/share/greg= (Linux/macOS), =%APPDATA%\greg= (Windows)
+- *Logs*: =~/.local/state/greg= (Linux/macOS), =%LOCALAPPDATA%\greg= (Windows)
+
+You can also specify a custom config file:
+
+#+BEGIN_SRC bash
+greg --config /path/to/config.yaml
+#+END_SRC
+
+** Configuration Hierarchy
+
+greg uses a layered configuration system where settings from multiple sources are merged together. Each layer overrides the previous one:
+
+| Priority    | Source                | Example                    | When to Use               |
+|-------------+-----------------------+----------------------------+---------------------------|
+| 1 (Lowest)  | Built-in defaults     | Hard-coded in application  | Automatic fallback        |
+| 2           | Config file           | =~/.config/greg/config.yaml= | Persistent settings       |
+| 3           | Environment variables | =GREG_PLAYER_QUALITY=1080p=  | Container/CI environments |
+| 4 (Highest) | Command-line flags    | =--quality 1080p=            | One-time overrides        |
+
+*Example:* If you set =quality: 720p= in your config file but run =greg --quality 1080p=, the command-line flag wins and you get 1080p.
+
+*Tip:* Use config file for your defaults, environment variables for deployment-specific settings, and flags for temporary overrides.
+
+** Path Handling
+
+greg handles paths cross-platform and supports multiple formats:
+
+*** Tilde Expansion (~)
+
+The =~= character works on ALL platforms (Linux, macOS, Windows):
+
+#+BEGIN_SRC yaml
+downloads:
+  path: ~/Videos/greg     # Works everywhere
+#+END_SRC
+
+On Linux/macOS: =~/Videos/greg= → =/home/username/Videos/greg=
+On Windows: =~/Videos/greg= → =C:\Users\YourName\Videos\greg=
+
+*** Platform-Specific Paths
+
+You can also use native paths:
+
+- *Linux/macOS:* =/home/username/Videos/greg= or =~/Videos/greg=
+- *Windows:* =C:\Users\YourName\Videos\greg= or =~/Videos/greg=
+
+*** Recommended: Use Tilde (~)
+
+For maximum portability, use =~= in your config file. greg automatically expands it to the correct home directory on any platform.
+
+** Complete Configuration Example
+
+#+BEGIN_SRC yaml
+# greg configuration file
+
+# ============================================================================
+# API Settings
+# ============================================================================
+api:
+  # Base URL for consumet-go-api (used internally)
+  base_url: http://localhost:8080
+
+  # API request timeout
+  timeout: 30s
+
+# ============================================================================
+# Player Settings
+# ============================================================================
+player:
+  # Video player to use (mpv, vlc, iina)
+  binary: mpv
+
+  # Additional mpv arguments
+  mpv_args:
+    - --hwdec=auto
+    - --profile=gpu-hq
+    - --keep-open=yes
+
+  # Default video quality (360p, 480p, 720p, 1080p, 1440p, 2160p, auto)
+  quality: 1080p
+
+  # Automatically resume from last position
+  resume: true
+
+  # Subtitle language preference (ISO 639-1 codes)
+  subtitle_language: en
+
+  # Automatically load subtitles
+  auto_subtitles: true
+
+  # Load user's mpv config file (~/.config/mpv/mpv.conf)
+  load_user_config: true
+
+  # IPC socket timeout in seconds
+  ipc_timeout: 5
+
+# ============================================================================
+# Provider Settings
+# ============================================================================
+providers:
+  # Default providers for each media type
+  default:
+    anime: hianime
+    # Combined default for both movies and TV shows
+    movies_and_tv: sflix
+
+  # Provider priority order (first available wins)
+  priority:
+    anime:
+      - hianime
+      - allanime
+    movies:
+      - sflix
+      - flixhq
+      - hdrezka
+    tv:
+      - sflix
+      - flixhq
+      - hdrezka
+
+  # Provider-specific settings
+  # Note: Each provider has a FIXED media type (you can't change what it supports)
+
+  # Anime providers
+  allanime:
+    enabled: true
+    mode: local  # "local" = embedded scraping, "remote" = external API
+    # remote_url: ""  # Only needed if mode is "remote"
+
+  hianime:
+    enabled: true
+    mode: local
+
+  # Movie/TV providers
+  sflix:
+    enabled: true
+    mode: local
+
+  flixhq:
+    enabled: true
+    mode: local
+
+  # Multi-type provider (supports anime + movies + TV)
+  hdrezka:
+    enabled: true
+    mode: local
+
+  # Manga provider
+  comix:
+    enabled: true
+    mode: local
+
+  # Provider health check interval
+  health_check_interval: 5m
+
+  # Enable automatic failover to next provider
+  auto_failover: true
+
+# ============================================================================
+# Tracker Settings (AniList)
+# ============================================================================
+tracker:
+  anilist:
+    # Enable AniList integration
+    enabled: true
+
+    # Automatically sync progress
+    auto_sync: true
+
+    # Progress threshold before updating (0.0-1.0)
+    # 0.85 means sync after 85% watched
+    sync_threshold: 0.85
+
+    # Update status to "Completed" when finished
+    auto_complete: true
+
+    # Sync interval for background sync
+    sync_interval: 5m
+
+    # OAuth2 redirect URI
+    redirect_uri: "http://localhost:8000/oauth/callback"
+
+    # OAuth2 server port
+    server_port: 8000
+
+# ============================================================================
+# Download Settings
+# ============================================================================
+downloads:
+  # Download directory (~ works on all platforms)
+  path: ~/Videos/greg
+
+  # Number of concurrent downloads
+  concurrent: 3
+
+  # Number of concurrent segment downloads (for HLS/DASH)
+  concurrent_segments: 5
+
+  # Embed subtitles in downloaded files
+  embed_subtitles: true
+
+  # Subtitle languages to download (ISO 639-1 codes)
+  subtitle_languages:
+    - en
+    - ja
+
+  # Automatically resume interrupted downloads
+  auto_resume: true
+
+  # Keep partial downloads on error
+  keep_partial: true
+
+  # File naming template
+  # Available variables: {title}, {episode}, {season}, {quality}, {year}
+  filename_template: "{title} - S{season:02d}E{episode:02d} [{quality}]"
+
+  # For anime (no season):
+  anime_filename_template: "{title} - {episode:03d} [{quality}]"
+
+  # For movies:
+  movie_filename_template: "{title} ({year}) [{quality}]"
+
+  # Maximum download speed in KB/s (0 = unlimited)
+  max_speed: 0
+
+  # Minimum free disk space in GB before refusing downloads
+  min_free_space: 5
+
+# ============================================================================
+# User Interface Settings
+# ============================================================================
+ui:
+  # Theme (only default for now)
+  theme: default
+
+  # Show image previews in search results
+  preview_images: true
+
+  # Image preview method (kitty, sixel, chafa, none, auto)
+  preview_method: auto
+
+  # Manga rendering method (sixel, kitty, chafa, none)
+  manga_method: sixel
+
+  # Preview image size
+  preview_size:
+    width: 40
+    height: 20
+
+  # Show progress bar during playback
+  show_progress: true
+
+  # Show loading spinner during operations
+  show_loading: false
+
+  # Compact mode (less spacing, more content)
+  compact: false
+
+  # Default media type on startup (movie_tv, anime, manga)
+  default_media_type: ""  # Empty = show selection menu
+
+  # Key bindings (vim-style by default)
+  keybindings:
+    quit: q
+    search: /
+    help: "?"
+    select: enter
+    back: esc
+    scroll_up: k
+    scroll_down: j
+    page_up: ctrl+u
+    page_down: ctrl+d
+
+  # Date/time format (Go time format)
+  date_format: "2006-01-02"
+  time_format: "15:04"
+
+  # Fuzzy finder (only builtin for now)
+  fuzzy_finder: builtin
+
+# ============================================================================
+# Cache Settings
+# ============================================================================
+cache:
+  # Enable caching
+  enabled: true
+
+  # Cache directory (auto-expands ~ on all platforms)
+  path: ~/.cache/greg
+
+  # Cache TTL for different types
+  ttl:
+    metadata: 5m
+    images: 24h
+    search_results: 10m
+    stream_urls: 1m
+
+  # Maximum cache size in MB
+  max_size: 500
+
+  # Clean up cache on exit
+  cleanup_on_exit: false
+
+# ============================================================================
+# Database Settings
+# ============================================================================
+database:
+  # Database file location (auto-expands ~ on all platforms)
+  path: ~/.local/share/greg/greg.db
+
+  # Enable WAL mode for better performance
+  wal_mode: true
+
+  # Maximum number of database connections
+  max_connections: 10
+
+  # Automatically vacuum database
+  auto_vacuum: true
+
+  # Backup database on exit
+  backup_on_exit: false
+
+# ============================================================================
+# Logging Settings
+# ============================================================================
+logging:
+  # Log level (debug, info, warn, error)
+  level: info
+
+  # Log file location (auto-expands ~ on all platforms)
+  file: ~/.local/state/greg/greg.log
+
+  # Maximum log file size in MB
+  max_size: 10
+
+  # Number of log files to keep
+  max_backups: 3
+
+  # Maximum age of log files in days
+  max_age: 7
+
+  # Compress rotated log files
+  compress: true
+
+  # Log format (json, text)
+  format: text
+
+  # Enable colored output (for text format)
+  color: true
+
+# ============================================================================
+# Network Settings
+# ============================================================================
+network:
+  # HTTP timeout in seconds
+  timeout: 30
+
+  # Enable HTTP/2
+  http2: true
+
+  # Maximum idle connections
+  max_idle_conns: 100
+
+  # Idle connection timeout in seconds
+  idle_conn_timeout: 90
+
+  # User agent string
+  user_agent: "greg/1.0.0"
+
+  # Proxy URL (http://proxy:port or socks5://proxy:port)
+  # proxy: ""
+
+  # Enable TLS certificate verification
+  verify_tls: true
+
+  # DNS servers (leave empty for system default)
+  dns_servers: []
+
+# ============================================================================
+# Advanced Settings
+# ============================================================================
+advanced:
+  # Enable experimental features
+  experimental: false
+
+  # Enable debug mode
+  debug: false
+
+  # Disable telemetry (greg doesn't collect any by default)
+  no_telemetry: true
+
+  # Performance profiling (cpu, mem, block, mutex)
+  # profiling: []
+
+  # Maximum goroutines for concurrent operations
+  max_goroutines: 100
+
+  # Clipboard settings (for WSL users)
+  clipboard:
+    # Custom clipboard command (e.g., "clip.exe" for WSL)
+    command: ""
+#+END_SRC
+
+** Environment Variables
+
+All configuration options can be set via environment variables using the =GREG_= prefix:
+
+#+BEGIN_SRC bash
+# Player settings
+export GREG_PLAYER_QUALITY=1080p
+export GREG_PLAYER_RESUME=true
+export GREG_PLAYER_LOAD_USER_CONFIG=true
+
+# Provider settings
+export GREG_PROVIDERS_DEFAULT_ANIME=hianime
+export GREG_PROVIDERS_DEFAULT_MOVIES_AND_TV=sflix
+
+# Download settings
+export GREG_DOWNLOADS_PATH=~/Videos
+export GREG_DOWNLOADS_CONCURRENT=5
+
+# UI settings
+export GREG_UI_DEFAULT_MEDIA_TYPE=anime
+export GREG_UI_MANGA_METHOD=sixel
+
+# Logging
+export GREG_LOGGING_LEVEL=debug
+#+END_SRC
+
+
+Environment variable format:
+- Uppercase
+- Use underscores for nesting
+- Replace hyphens with underscores
+
+Examples:
+- =ui.preview/images= → =GREG/UI/PREVIEW/IMAGES=
+- =providers.flixhq.enabled= → =GREG/PROVIDERS/FLIXHQ_ENABLED=
+
+** Command-Line Flags
+
+Common flags override config file settings:
+
+#+BEGIN_SRC bash
+# Player quality
+greg --quality 1080p
+
+# Download path
+greg --download-path ~/Videos
+
+# Config file
+greg --config /path/to/config.yaml
+
+# Logging level
+greg --log-level debug
+#+END_SRC
+
+
+View all available flags:
+
+#+BEGIN_SRC bash
+greg --help
+#+END_SRC
+
+** Configuration Sections
+
+*** API Configuration
+
+Internal API server settings (used for provider communication).
+
+/base_url/: Base URL for the internal api (default: =http://localhost:8080=)
+
+/timeout/: Request timeout for API calls (duration, default: =30s=)
+
+Note: This is for internal use. Most users don't need to modify these settings.
+
+*** Player Configuration
+
+Controls video playback behavior.
+
+/binary/: Video player executable
+
+/quality/: Preferred video quality. Options: =360p=, =480p=, =720p=, =1080p=, =1440p=, =2160p=, =auto=
+
+/resume/: Automatically resume from last watched position (boolean)
+
+/auto_subtitles/: Automatically load subtitles when available (boolean)
+
+/subtitle_language/: Preferred subtitle language (ISO 639-1 code, e.g., =en=, =ja=)
+
+/load_user_config/: Load user's mpv config file (=~/.config/mpv/mpv.conf=) (boolean)
+
+/mpv_args/: Additional arguments passed to mpv (array of strings)
+
+/ipc_timeout/: Timeout for IPC socket communication in seconds (integer)
+
+*** Provider Configuration
+
+Controls streaming provider behavior.
+
+**IMPORTANT:** Each provider has a fixed media type. You cannot change what type of content a provider supports - this is determined by the provider's implementation.
+
+*Available Providers (as of Jan 2026):*
+
+| Type      | Providers                                        | Default |
+|-----------+--------------------------------------------------+---------|
+| Anime     | hianime, allanime, gogoanime, animepahe, hdrezka | hianime |
+| Movies/TV | sflix, flixhq, dramacool, hdrezka                | sflix   |
+| Manga     | comix                                            | comix   |
+
+Note: =hdrezka= supports both anime and movies/TV content.
+
+*Configuration:*
+
+/default/: Default provider for each media type
+  - =anime=: Default anime provider (default: =hianime=)
+  - =movies_and_tv=: Combined default for movies and TV shows (default: =sflix=)
+
+/priority/: Fallback order when primary provider fails (array of provider names per media type)
+
+/auto_failover/: Automatically try next provider on failure (boolean)
+
+/health_check_interval/: How often to check provider availability (duration, e.g., =5m=)
+
+*Provider-Specific Settings:*
+
+Each provider can be configured individually with:
+- =enabled=: Enable/disable the provider (boolean)
+- =mode=: **Execution mode** (NOT media type):
+  - =local= (default): Provider runs embedded in greg (scraping, decryption happens locally)
+  - =remote=: Provider delegates to external API server (useful for proxying or closed-source implementations)
+- =remote_url=: Target API URL (only needed if =mode= is =remote=)
+
+**Example:** If you set =allanime.mode = remote=, allanime still only handles **anime** - the =mode= setting controls WHERE the scraping happens, not WHAT content type it handles.
+- =remote_url=: Target API URL (only needed if mode is =remote=)
+
+*** Tracker Configuration
+
+Controls AniList integration.
+
+/enabled/: Enable AniList tracking (boolean)
+
+/auto_sync/: Automatically sync progress to AniList (boolean)
+
+/sync_threshold/: Percentage watched before triggering sync (0.0-1.0, default: =0.85=)
+
+/auto_complete/: Mark as completed when 100% watched (boolean)
+
+/sync_interval/: Background sync interval (duration, default: =5m=)
+
+/redirect_uri/: OAuth2 redirect URI (default: =http://localhost:8000/oauth/callback=)
+
+/server_port/: OAuth2 callback server port (integer, default: =8000=)
+
+*** Download Configuration
+
+Controls download behavior.
+
+/path/: Where to save downloaded files (string)
+
+/concurrent/: Number of simultaneous downloads (integer)
+
+/embed_subtitles/: Embed subtitles in video file (boolean)
+
+/filename_template/: Naming pattern for downloaded files (string)
+
+Available template variables:
+- ={title}= - Media title
+- ={episode}= - Episode number
+- ={season}= - Season number
+- ={quality}= - Video quality
+- ={year}= - Release year
+
+Format specifiers:
+- ={episode:03d}= - Zero-padded to 3 digits (001, 002, ...)
+- ={season:02d}= - Zero-padded to 2 digits (01, 02, ...)
+
+*** UI Configuration
+
+Controls terminal interface appearance.
+
+/theme/: Color scheme. Built-in themes:
+- =default= - default theme
+
+/preview_images/: Show media posters in search results (boolean)
+
+/preview_method/: Image rendering method:
+- =auto= - Auto-detect best method
+- =kitty= - Kitty terminal graphics protocol
+- =sixel= - Sixel graphics
+- =chafa= - Chafa image-to-text converter
+- =none= - Disable image previews
+
+/manga_method/: Manga page rendering method:
+- =sixel= - Sixel graphics (default)
+- =kitty= - Kitty terminal graphics protocol
+- =chafa= - Chafa image-to-text converter
+- =none= - Disable manga rendering
+
+/show_loading/: Show loading spinner during operations (boolean, default: =false=)
+
+/default_media_type/: Default media type on startup:
+- =movie_tv= - Start with movies/TV interface
+- =anime= - Start with anime interface
+- =manga= - Start with manga interface
+- Empty string (=""=) - Show selection menu (default)
+
+/keybindings/: Customize keyboard shortcuts (map of string to string)
+
+*** Cache Configuration
+
+Controls caching behavior.
+
+/enabled/: Enable caching (boolean)
+
+/path/: Cache directory location (string)
+
+/ttl/: Time-to-live for different cache types (map of duration)
+
+/max_size/: Maximum cache size in MB (integer)
+
+*** Database Configuration
+
+Controls SQLite database settings.
+
+/path/: Database file location (string)
+
+/wal_mode/: Enable Write-Ahead Logging for better performance (boolean)
+
+/auto_vacuum/: Automatically reclaim unused space (boolean)
+
+*** Logging Configuration
+
+Controls logging behavior.
+
+/level/: Minimum log level. Options: =debug=, =info=, =warn=, =error=
+
+/file/: Log file location (string)
+
+/format/: Log format. Options: =text=, =json=
+
+/color/: Enable colored output for text format (boolean)
+
+** Generating Default Config
+
+Generate a config file with default values:
+
+#+BEGIN_SRC bash
+greg config init
+#+END_SRC
+
+
+This creates =~/.config/greg/config.yaml= with all default settings.
+
+** Viewing Configuration
+
+View current configuration path:
+
+#+BEGIN_SRC bash
+greg config path
+#+END_SRC
+
+
+View current configuration values:
+
+#+BEGIN_SRC bash
+greg config show
+#+END_SRC
+
+** Configuration Examples
+
+*** Minimal Configuration
+
+#+BEGIN_SRC yaml
+player:
+  quality: 1080p
+
+downloads:
+  path: ~/Videos/greg  # Works on all platforms
+#+END_SRC
+
+*** Power User Configuration
+
+#+BEGIN_SRC yaml
+player:
+  quality: 1080p
+  load_user_config: true
+  mpv_args:
+    - --profile=gpu-hq
+    - --hwdec=auto
+    - --interpolation
+    - --video-sync=display-resample
+
+providers:
+  default:
+    anime: hianime
+    movies_and_tv: sflix
+  priority:
+    anime:
+      - hianime
+      - allanime
+    movies:
+      - sflix
+      - flixhq
+      - hdrezka
+    tv:
+      - sflix
+      - flixhq
+      - hdrezka
+  auto_failover: true
+
+tracker:
+  anilist:
+    auto_sync: true
+    sync_threshold: 0.90
+
+downloads:
+  concurrent: 5
+  concurrent_segments: 10
+  embed_subtitles: true
+  filename_template: "[{quality}] {title} - {episode:03d}"
+
+ui:
+  theme: default
+  preview_images: true
+  manga_method: kitty
+  default_media_type: anime
+  compact: true
+
+logging:
+  level: debug
+#+END_SRC
+
+*** Windows-Specific Configuration
+
+On Windows, you can use either tilde (~) or native Windows paths:
+
+#+BEGIN_SRC yaml
+# Option 1: Use tilde (recommended - works everywhere)
+downloads:
+  path: ~/Videos/greg
+
+# Option 2: Use Windows native paths
+downloads:
+  path: C:\Users\YourName\Videos\greg
+
+# Logging on Windows
+logging:
+  file: ~/AppData/Local/greg/greg.log
+  # Or: C:\Users\YourName\AppData\Local\greg\greg.log
+
+# Database on Windows
+database:
+  path: ~/AppData/Roaming/greg/greg.db
+  # Or: C:\Users\YourName\AppData\Roaming\greg\greg.db
+#+END_SRC
+
+*Note:* Use forward slashes (=/=) or escaped backslashes (=\\=) in YAML. The tilde (=~=) is recommended for portability.
+
+** Troubleshooting
+
+*** Config Not Loading
+
+1. Check file location:
+#+BEGIN_SRC bash
+greg config path
+#+END_SRC
+
+
+2. View current configuration to see what's loaded:
+#+BEGIN_SRC bash
+greg config show
+#+END_SRC
+
+
+3. Check file permissions (Linux/macOS):
+#+BEGIN_SRC bash
+ls -l ~/.config/greg/config.yaml
+#+END_SRC
+
+4. Check YAML syntax - ensure proper indentation and no tabs
+
+*** Environment Variables Not Working
+
+Environment variables must use exact naming:
+
+#+BEGIN_SRC bash
+# Wrong
+export GREG_PLAYER-QUALITY=1080p
+
+# Correct
+export GREG_PLAYER_QUALITY=1080p
+#+END_SRC
+
+*** Flags Not Overriding Config
+
+Flags should come after the command:
+
+#+BEGIN_SRC bash
+# Wrong
+greg --quality 1080p play
+
+# Correct
+greg play --quality 1080p
+#+END_SRC
+
+** Platform-Specific Notes
+
+*** macOS
+
+- Keychain integration for AniList tokens
+- iTerm2 supports inline images natively
+
+*** Linux
+
+- Use hardware acceleration: =mpv_args: [--hwdec=vaapi]=
+- Kitty and sixel protocols work best for image previews
+
+*** Windows
+
+- Config location: =%APPDATA%\greg\config.yaml= (e.g., =C:\Users\YourName\AppData\Roaming\greg\config.yaml=)
+- Cache location: =%LOCALAPPDATA%\greg= (e.g., =C:\Users\YourName\AppData\Local\greg=)
+- Use backslashes in paths: =C:\Users\...\Videos=
+- mpv requires manual installation
+- Image previews have limited support (but windows terminal supports sixel, if you have chafa installed)
+- WSL users: Set =advanced.clipboard.command= to =clip.exe= for clipboard support
+
+** Manga Reading
+
+Configure manga rendering with:
+
+#+BEGIN_SRC yaml
+ui:
+  # Manga page rendering method
+  manga_method: sixel  # Options: sixel, kitty, chafa, none
+
+  # Set manga as default interface on startup (optional)
+  default_media_type: manga
+
+providers:
+  # Enable manga provider (comix)
+  comix:
+    enabled: true
+    mode: local
+#+END_SRC
+
+*Terminal Compatibility:*
+- =sixel=: Works on xterm, mlterm, mintty, iTerm2 (with sixel support)
+- =kitty=: Best for Kitty terminal
+- =chafa=: Fallback for terminals without graphics protocol support
+- =none=: Disable image rendering
+
+** See Also
+
+* WatchParty Settings
+
+Configures the WatchParty integration for watching media with friends.
+
+** Configuration Example
+
+#+BEGIN_SRC yaml
+  # ============================================================================
+  # WatchParty Settings
+  # ============================================================================
+  watchparty:
+    # Enable WatchParty integration
+    enabled: true
+
+    # Default m3u8 proxy URL (leave empty to require --proxy flag)
+    # Example: https://forms-energy-emotions-enquiry.trycloudflare.com/
+    default_proxy: ""
+
+    # Auto-open browser when creating WatchParty room
+    auto_open_browser: true
+
+    # Default origin header for proxied streams
+    default_origin: "https://videostr.net"
+#+END_SRC
+
+Note: watchparty will not work without a proxy. I am working on finding a good workaround
+
+** Settings
+
+/enabled/ (boolean): Enable the WatchParty feature
+
+/default_proxy/ (string): Default proxy URL to use for m3u8 streams that require special headers. An example free proxy service is: =https://forms-energy-emotions-enquiry.trycloudflare.com/=. Leave empty if you want to specify proxy via command line only.
+
+/auto/open/browser/ (boolean): Automatically open the WatchParty URL in your browser after generation
+
+/default_origin/ (string): Default origin header value when not derivable from referer
+
+** Usage
+
+This configuration is used when running =greg watchparty= command or when using the WatchParty feature in TUI mode (press "w" in episodes view).
+
+** See Also
+
+- [[file:dev/ARCHITECTURE.org][ARCHITECTURE.org]] - System architecture
+- [[file:PROVIDERS.org][PROVIDERS.org]] - Provider development
+- [[file:dev/CONTRIBUTING.org][CONTRIBUTING.org]] - Development guidelines

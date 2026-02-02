@@ -1,0 +1,245 @@
+#+TITLE: README
+#+FILETAGS: :documentation
+
+* MPV Player Implementation
+
+This package provides an mpv-based implementation of the =player.Player= interface using IPC (Inter-Process Communication) via Unix sockets.
+
+** Features
+
+- Full playback control (play, pause, resume, stop, seek)
+- Real-time progress monitoring with callbacks
+- Support for all mpv options (subtitles, audio tracks, custom arguments)
+- HTTP header support for streaming (referer, user-agent, custom headers)
+- Thread-safe operations
+- Automatic resource cleanup
+
+** Requirements
+
+- mpv binary installed and available in PATH
+- Unix-like system with Unix socket support
+
+** Usage
+
+*** Basic Playback
+
+#+BEGIN_SRC go
+package main
+
+import (
+    "context"
+    "fmt"
+    "time"
+
+    "github.com/justchokingaround/greg/internal/player"
+    "github.com/justchokingaround/greg/internal/player/mpv"
+)
+
+func main() {
+    // Create player instance
+    p, err := mpv.NewMPVPlayer()
+    if err != nil {
+        panic(err)
+    }
+
+    // Play a video
+    ctx := context.Background()
+    err = p.Play(ctx, "https://example.com/video.mp4", player.PlayOptions{
+        Volume: 80,
+    })
+    if err != nil {
+        panic(err)
+    }
+
+    // Wait a bit then stop
+    time.Sleep(10 * time.Second)
+    p.Stop(ctx)
+}
+#+END_SRC
+
+
+*** With Progress Monitoring
+
+#+BEGIN_SRC go
+p, _ := mpv.NewMPVPlayer()
+
+// Set up progress callback (called every second)
+p.OnProgressUpdate(func(progress player.PlaybackProgress) {
+    fmt.Printf("Progress: %.2f%% (%.0f/%.0f seconds)\n",
+        progress.Percentage,
+        progress.CurrentTime.Seconds(),
+        progress.Duration.Seconds())
+})
+
+// Set up playback end callback
+p.OnPlaybackEnd(func() {
+    fmt.Println("Playback finished!")
+})
+
+// Set up error callback
+p.OnError(func(err error) {
+    fmt.Printf("Player error: %v\n", err)
+})
+
+// Start playback
+ctx := context.Background()
+p.Play(ctx, url, player.PlayOptions{})
+#+END_SRC
+
+
+*** With Streaming Headers
+
+#+BEGIN_SRC go
+// Play with custom headers for streaming sites
+p.Play(ctx, streamURL, player.PlayOptions{
+    Referer:   "https://streaming-site.com",
+    UserAgent: "Mozilla/5.0 ...",
+    Headers: map[string]string{
+        "X-Custom-Header": "value",
+    },
+})
+#+END_SRC
+
+
+*** With Subtitles
+
+#+BEGIN_SRC go
+p.Play(ctx, videoURL, player.PlayOptions{
+    SubtitleURL:   "https://example.com/subs.srt",
+    SubtitleLang:  "eng",
+    SubtitleDelay: 500 * time.Millisecond,
+})
+#+END_SRC
+
+
+*** Pause, Resume, and Seek
+
+#+BEGIN_SRC go
+// Pause playback
+p.Pause(ctx)
+
+// Resume playback
+p.Resume(ctx)
+
+// Seek to 5 minutes
+p.Seek(ctx, 5*time.Minute)
+
+// Get current progress
+progress, _ := p.GetProgress(ctx)
+fmt.Printf("Current position: %v\n", progress.CurrentTime)
+#+END_SRC
+
+
+*** Advanced Options
+
+#+BEGIN_SRC go
+p.Play(ctx, videoURL, player.PlayOptions{
+    StartTime:  30 * time.Second,      // Start from 30s
+    Volume:     75,                     // Set volume to 75%
+    Speed:      1.5,                    // 1.5x playback speed
+    Fullscreen: true,                   // Start in fullscreen
+    AudioTrack: 2,                      // Select audio track 2
+    Title:      "My Video",             // Window title
+    MPVArgs:    []string{"--hwdec=auto"}, // Custom mpv args
+})
+#+END_SRC
+
+
+** Architecture
+
+*** IPC Communication
+
+The player communicates with mpv using JSON-RPC over Unix sockets:
+
+1. /Socket Creation/: A unique socket path is generated in =/tmp/greg-mpv-{random}.sock=
+2. /Process Spawning/: mpv is launched with =--input-ipc-server={socket}=
+3. /Connection/: gopv library connects to the socket
+4. /Commands/: JSON-RPC commands are sent via =Request()= method
+   - Get property: =Request("get_property", "time-pos")=
+   - Set property: =Request("set_property", "pause", true)=
+   - Execute command: =Request("quit")=
+
+*** Progress Monitoring
+
+Two goroutines run during playback:
+
+1. /Progress Monitor/: Polls mpv properties every second
+   - Queries: time-pos, duration, pause, volume, speed, eof-reached
+   - Triggers =OnProgressUpdate= callback
+   - Triggers =OnPlaybackEnd= callback when EOF is reached
+
+2. /Process Monitor/: Watches the mpv process
+   - Detects unexpected exits
+   - Triggers =OnError= callback on process failure
+   - Cleans up resources
+
+*** Resource Management
+
+Cleanup happens automatically:
+- Socket file is removed on stop
+- mpv process is killed if still running
+- Goroutines are stopped via context cancellation
+- All resources are cleaned up even if mpv crashes
+
+** Testing
+
+*** Unit Tests
+
+#+BEGIN_SRC bash
+go test ./internal/player/mpv
+#+END_SRC
+
+
+Tests socket generation, argument building, state management, and callbacks.
+
+*** Integration Tests
+
+#+BEGIN_SRC bash
+go test -tags=integration ./internal/player/mpv
+#+END_SRC
+
+
+Requires mpv to be installed. Tests actual playback with mpv test sources.
+
+** Implementation Details
+
+*** Thread Safety
+
+All public methods use mutex locks to ensure thread-safe access:
+- =mu sync.RWMutex= protects all state
+- Read operations use =RLock()=
+- Write operations use =Lock()=
+
+*** State Management
+
+Player maintains state:
+- =StateStopped=: No playback
+- =StatePlaying=: Actively playing
+- =StatePaused=: Playback paused
+- =StateLoading=: Buffering (not currently used)
+- =StateError=: Error state (not currently used)
+
+*** Error Handling
+
+- All errors are wrapped with context
+- IPC errors trigger the error callback
+- Process failures are handled gracefully
+- Failed operations don't leave orphaned processes
+
+** Limitations
+
+- Unix sockets only (Linux, macOS, BSD)
+- No Windows support (would need named pipes)
+- EOF detection may not work with some synthetic sources (lavfi)
+- Progress polling is 1-second intervals (not configurable yet)
+
+** Future Enhancements
+
+- [ ] Windows support via named pipes
+- [ ] Configurable progress polling interval
+- [ ] Property observation using =ObserveProperty=
+- [ ] Event listeners using =RegisterListener=
+- [ ] Playlist support
+- [ ] Audio-only mode
+- [ ] Screenshot functionality
+- [ ] Chapter navigation
